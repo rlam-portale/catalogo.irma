@@ -47,6 +47,8 @@
   .cover img{width:100%; height:100%; object-fit:cover}
   .cover .noimg{font-family:Georgia,serif; font-size:13px; color:#6f5c42; padding:12px; text-align:center}
   .badge{position:absolute; top:8px; left:8px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; color:#fff}
+  .code{position:absolute; top:8px; right:8px; font-size:11px; font-weight:700; padding:3px 7px; border-radius:999px;
+    background:rgba(43,38,32,.72); color:#fff; letter-spacing:.3px; font-family:Georgia,serif}
   .binfo{padding:10px 12px 12px}
   .btitle{font-size:14px; font-weight:600; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
   .bauthor{font-size:12.5px; color:var(--muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -104,10 +106,25 @@
   .scanlog{margin-top:14px; font-size:13.5px; line-height:1.8; max-height:300px; overflow-y:auto}
   .scanlog .ok{color:var(--green)} .scanlog .err{color:var(--red)} .scanlog .warn{color:var(--amber)}
   a{color:var(--accent-dark)}
+
+  /* barra "nuova versione": sta nel flusso sopra l'header, così non copre mai la navigazione */
+  #updatebar{background:var(--accent-dark); color:#fff; display:flex; align-items:center; justify-content:center;
+    gap:12px; padding:10px 16px; font-size:14.5px; flex-wrap:wrap; text-align:center}
+  #updatebar button{border:none; font:inherit; font-weight:700; cursor:pointer; border-radius:999px; padding:7px 15px;
+    background:#fff; color:var(--accent-dark)}
+  #updatebar button:hover{background:var(--bg)}
+  #updatebar button.dopo{background:transparent; color:#fff; text-decoration:underline; font-weight:500; padding:7px 4px}
+
   @media (max-width:600px){ .grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px} }
 </style>
 </head>
 <body>
+
+<div id="updatebar" class="hidden">
+  <span>🔄 È uscita una versione più recente dell'app.</span>
+  <button onclick="applicaAggiornamento()">Aggiorna adesso</button>
+  <button class="dopo" onclick="rimandaAggiornamento()">Più tardi</button>
+</div>
 
 <header>
   <div class="topbar">
@@ -158,6 +175,7 @@
         <option value="Titolo">Ordina: titolo</option>
         <option value="Autore">Ordina: autore</option>
         <option value="Anno">Ordina: anno</option>
+        <option value="Codice">Ordina: codice</option>
         <option value="recenti">Ordina: aggiunti di recente</option>
       </select>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
@@ -236,6 +254,7 @@ const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fanta
 let mem = {};           // fallback se localStorage non disponibile
 let books = [], colls = [], loans = [];
 let loaded = false;
+let scanInCorso = false;   // usato dal controllo versione per non interrompere una scansione
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
 const DEFAULT_BASE = 'appI6zidIy0DriyoG'; // Base "Biblioteca Personale"
@@ -269,6 +288,36 @@ const createRec  = (t, fields) => api(encodeURIComponent(t), {method:'POST', bod
 const createMany = (t, recs)   => api(encodeURIComponent(t), {method:'POST', body:JSON.stringify({records:recs, typecast:true})});
 const updateRec  = (t, id, fields) => api(`${encodeURIComponent(t)}/${id}`, {method:'PATCH', body:JSON.stringify({fields, typecast:true})});
 const deleteRec  = (t, id) => api(`${encodeURIComponent(t)}/${id}`, {method:'DELETE'});
+
+/* ---- codice progressivo ----
+   Airtable non permette di creare un campo Autonumber dall'API, quindi il progressivo
+   lo assegna l'app. Il numero più alto lo chiedo al server e non alla copia locale:
+   così due schede aperte insieme non finiscono per assegnare lo stesso codice.
+   Come in un Autonumber i numeri non si riusano mai: dopo una cancellazione resta un buco. */
+async function ultimoCodice(){
+  try{
+    const j = await api(`${encodeURIComponent(TBL.libri)}?pageSize=1&fields%5B%5D=Codice`
+      + `&sort%5B0%5D%5Bfield%5D=Codice&sort%5B0%5D%5Bdirection%5D=desc`);
+    const r = (j.records||[])[0];
+    return Number(r && r.fields['Codice']) || 0;
+  }catch(e){
+    // campo assente o server irraggiungibile: ripiego sul massimo tra i libri già caricati
+    return books.reduce((m,b)=> Math.max(m, Number(b.fields['Codice'])||0), 0);
+  }
+}
+/* crea uno o più libri assegnando i codici in sequenza */
+async function creaLibri(lista){
+  let n = await ultimoCodice();
+  const recs = lista.map(f => ({fields: {...f, 'Codice': ++n}}));
+  const out = [];
+  for(let i=0; i<recs.length; i+=10){
+    const j = await createMany(TBL.libri, recs.slice(i,i+10));
+    out.push(...j.records);
+    if(i+10 < recs.length) await new Promise(r=>setTimeout(r,250));
+  }
+  return out;
+}
+async function creaLibro(fields){ return (await creaLibri([fields]))[0]; }
 
 /* ================== CARICAMENTO DATI ================== */
 async function loadAll(force){
@@ -349,13 +398,13 @@ function renderCatalog(){
   const fc = document.getElementById('f-coll').value;
   const sort = document.getElementById('f-sort').value;
   let list = books.filter(b => (b.fields['Possesso']||'Posseduto')!=='Desiderato');
-  if(q)  list = list.filter(b => ['Titolo','Autore','ISBN','Editore','Descrizione'].some(f => String(b.fields[f]||'').toLowerCase().includes(q))
+  if(q)  list = list.filter(b => ['Titolo','Autore','ISBN','Editore','Descrizione','Codice'].some(f => String(b.fields[f]||'').toLowerCase().includes(q))
                              || (b.fields['Tag']||[]).some(t => String(t).toLowerCase().includes(q)));
   if(fs) list = list.filter(b => b.fields['Stato']===fs);
   if(fg) list = list.filter(b => (b.fields['Genere']||[]).includes(fg));
   if(fc) list = list.filter(b => (b.fields['Collocazione']||[]).includes(fc));
   if(sort==='recenti') list.sort((a,b)=> (b.createdTime||'').localeCompare(a.createdTime||''));
-  else if(sort==='Anno') list.sort((a,b)=> (a.fields['Anno']||0)-(b.fields['Anno']||0));
+  else if(sort==='Anno' || sort==='Codice') list.sort((a,b)=> (a.fields[sort]||0)-(b.fields[sort]||0));
   else list.sort((a,b)=> String(a.fields[sort]||'').localeCompare(String(b.fields[sort]||''), 'it'));
   document.getElementById('count').textContent = `${list.length} libr${list.length===1?'o':'i'}`;
   document.getElementById('catalog').innerHTML = list.map(cardHTML).join('');
@@ -369,8 +418,9 @@ function cardHTML(b){
     : f['Stato'] ? `<span class="badge" style="background:${STATO_COLORS[f['Stato']]||'var(--muted)'}">${esc(f['Stato'])}</span>` : '';
   const stars = f['Valutazione'] ? `<div class="stars">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</div>` : '';
   const cov = coverSrc(f);
+  const code = f['Codice'] ? `<span class="code">#${esc(f['Codice'])}</span>` : '';
   return `<div class="book" onclick="openDetail('${b.id}')">
-    <div class="cover">${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}</div>
+    <div class="cover">${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}</div>
     <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f['Autore']||'')}</div>${stars}</div>
   </div>`;
 }
@@ -418,6 +468,7 @@ function openDetail(id){
   const b = bookById(id); if(!b) return;
   const f = b.fields; const loan = activeLoanFor(id);
   const kv = [];
+  if(f['Codice']) kv.push(['Codice', '#'+f['Codice']]);
   if(f['Editore']) kv.push(['Editore', f['Editore']]);
   if(f['Anno']) kv.push(['Anno', f['Anno']]);
   if(f['ISBN']) kv.push(['ISBN', f['ISBN']]);
@@ -514,7 +565,7 @@ async function saveBook(id){
   };
   try{
     if(id){ const j = await updateRec(TBL.libri, id, fields); const i = books.findIndex(b=>b.id===id); books[i]=j; }
-    else{ const j = await createRec(TBL.libri, fields); books.push(j.records[0]); }
+    else{ books.push(await creaLibro(fields)); }
     closeModal(); fillFilters(); renderAll(); toast('📗 Libro salvato');
   }catch(e){ toast(e.message); }
 }
@@ -552,50 +603,181 @@ function volumeToFields(vi, isbn){
     'Tag': cleanTags((vi.categories||[]).flatMap(c=>String(c).split('/'))),
     'Lingua': vi.language==='it'?'Italiano':vi.language==='en'?'Inglese':vi.language==='fr'?'Francese':vi.language==='de'?'Tedesco':vi.language==='es'?'Spagnolo':'' };
 }
-/* cerca su Google Books e integra con Open Library (editore, pagine, copertina, argomenti, descrizione) */
-async function fetchBookByISBN(raw){
-  let data = null;
-  try{
-    const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}`).then(r=>r.json());
-    if(g.totalItems>0) data = volumeToFields(g.items[0].volumeInfo, raw);
-  }catch(e){}
-  try{
-    const o = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${raw}&format=json&jscmd=data`).then(r=>r.json());
-    const d = o['ISBN:'+raw];
-    if(d){
-      if(!data) data = { 'Titolo':d.title||'', 'ISBN':raw, 'Tag':[] };
-      if(!data['Autore'] && d.authors) data['Autore'] = d.authors.map(a=>a.name).join(', ');
-      if(!data['Editore'] && d.publishers) data['Editore'] = d.publishers.map(p=>p.name).join(', ');
-      if(!data['Anno'] && d.publish_date) data['Anno'] = Number((d.publish_date.match(/\d{4}/)||[null])[0]);
-      if(!data['Pagine'] && d.number_of_pages) data['Pagine'] = d.number_of_pages;
-      if(!data['Copertina'] && d.cover) data['Copertina'] = d.cover.large||d.cover.medium||d.cover.small||'';
-      data['Tag'] = cleanTags([...(data['Tag']||[]), ...((d.subjects||[]).map(s=>s.name||s))]);
+/* Metti false per non far passare nessuna richiesta dal proxy pubblico r.jina.ai
+   (l'ultimo anello della cascata: senza, i libri italiani di editori piccoli restano spesso incompleti) */
+const USA_PROXY_ITALIANO = true;
+const PROXY = 'https://r.jina.ai/';
+
+/* unione dei dati: riempie solo i campi vuoti, non sovrascrive mai una fonte precedente */
+function mergeInto(dst, src){
+  if(!src) return dst;
+  if(!dst) dst = {};
+  for(const k in src){
+    const v = src[k];
+    if(v===null || v===undefined || v==='') continue;
+    if(Array.isArray(v)){
+      if(!v.length) continue;
+      if(k==='Tag') dst[k] = cleanTags([...(dst[k]||[]), ...v]);
+      else if(!dst[k] || !dst[k].length) dst[k] = v;
     }
-  }catch(e){}
-  // descrizione da Open Library (scheda "opera") se Google non la fornisce
-  if(data && !data['Descrizione']){
-    try{
-      const ed = await fetch(`https://openlibrary.org/isbn/${raw}.json`).then(r=>r.json());
-      const wk = ed && ed.works && ed.works[0] && ed.works[0].key;
-      if(wk){
-        const w = await fetch(`https://openlibrary.org${wk}.json`).then(r=>r.json());
-        const desc = typeof w.description==='string' ? w.description : (w.description && w.description.value) || '';
-        if(desc) data['Descrizione'] = desc.trim();
-        if(w.subjects) data['Tag'] = cleanTags([...(data['Tag']||[]), ...w.subjects]);
-      }
-    }catch(e){}
+    else if(dst[k]===null || dst[k]===undefined || dst[k]==='') dst[k] = v;
   }
-  return data;
+  return dst;
+}
+
+/* carica uno script JSONP: serve per le fonti che non mandano header CORS */
+function jsonp(url, timeoutMs=12000){
+  return new Promise((res, rej)=>{
+    const name = '__jsonp' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    const end = (fn, arg)=>{ clearTimeout(t); try{ delete window[name]; }catch(e){ window[name]=undefined; } s.remove(); fn(arg); };
+    const t = setTimeout(()=>end(rej, new Error('nessuna risposta entro '+(timeoutMs/1000)+'s')), timeoutMs);
+    window[name] = d => end(res, d);
+    s.onerror = () => end(rej, new Error('script non caricato'));
+    s.src = url + (url.includes('?')?'&':'?') + 'callback=' + name;
+    document.head.appendChild(s);
+  });
+}
+
+/* Google Books risponde agli errori con un JSON {error:{code}}, NON con un corpo vuoto:
+   senza questo controllo una quota esaurita si confonde con "libro inesistente". */
+async function gbFetch(url){
+  const r = await fetch(url);
+  let j = null;
+  try{ j = await r.json(); }catch(e){}
+  if(j && j.error){ const e = new Error(j.error.message || 'errore Google Books'); e.code = j.error.code || r.status; e.quota = (e.code===429); throw e; }
+  if(!r.ok){ const e = new Error('HTTP '+r.status); e.code = r.status; e.quota = (r.status===429); throw e; }
+  return j || {};
+}
+async function gbSearch(q, isbn, requireMatch){
+  const j = await gbFetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5`);
+  const items = j.items || [];
+  if(!items.length) return null;
+  const match = items.find(it => ((it.volumeInfo||{}).industryIdentifiers||[])
+    .some(x => String(x.identifier||'').replace(/[^0-9Xx]/g,'').toUpperCase() === isbn.toUpperCase()));
+  const hit = match || (requireMatch ? null : items[0]);
+  return hit ? volumeToFields(hit.volumeInfo, isbn) : null;
+}
+async function gbById(id, isbn){
+  const j = await gbFetch(`https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(id)}`);
+  return j.volumeInfo ? volumeToFields(j.volumeInfo, isbn) : null;
+}
+/* endpoint legacy con quota separata: non dà titolo/autore ma conferma l'esistenza
+   del volume e ne restituisce l'id e la copertina anche quando l'API principale è satura */
+async function gbDynamicLinks(isbn){
+  const d = await jsonp(`https://books.google.com/books?bibkeys=ISBN:${isbn}&jscmd=viewapi`);
+  const e = d && d['ISBN:'+isbn];
+  if(!e) return null;
+  const id = ((e.info_url||'').match(/[?&]id=([^&]+)/) || [])[1] || '';
+  const thumb = (e.thumbnail_url||'').replace(/^http:/,'https:').replace(/zoom=\d/,'zoom=1');
+  return { id, fields: thumb ? {'Copertina':thumb} : null };
+}
+
+async function fromOpenLibrary(isbn){
+  const o = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`).then(r=>r.json());
+  const d = o['ISBN:'+isbn];
+  if(!d) return null;
+  return { 'Titolo':d.title||'', 'ISBN':isbn,
+    'Autore': (d.authors||[]).map(a=>a.name).join(', '),
+    'Editore': (d.publishers||[]).map(p=>p.name).join(', '),
+    'Anno': d.publish_date ? Number((d.publish_date.match(/\d{4}/)||[null])[0]) : null,
+    'Pagine': d.number_of_pages || null,
+    'Copertina': d.cover ? (d.cover.large||d.cover.medium||d.cover.small||'') : '',
+    'Tag': cleanTags((d.subjects||[]).map(s=>s.name||s)) };
+}
+/* descrizione dalla scheda "opera" di Open Library */
+async function fromOpenLibraryWork(isbn){
+  const ed = await fetch(`https://openlibrary.org/isbn/${isbn}.json`).then(r=>r.json());
+  const wk = ed && ed.works && ed.works[0] && ed.works[0].key;
+  if(!wk) return null;
+  const w = await fetch(`https://openlibrary.org${wk}.json`).then(r=>r.json());
+  const desc = typeof w.description==='string' ? w.description : (w.description && w.description.value) || '';
+  return { 'Descrizione': desc.trim(), 'Tag': cleanTags(w.subjects||[]) };
+}
+
+/* Ultimo anello: scheda Hoepli letta attraverso un proxy pubblico che la converte in testo.
+   Copre l'editoria italiana minore, dove Google e Open Library hanno i buchi più larghi.
+   È l'unica fonte che analizza una pagina HTML invece di un'API: se Hoepli cambia il
+   layout smette di funzionare, quindi i dati che ne arrivano vanno considerati da verificare. */
+function nomeProprio(s){
+  const p = s.trim().split(/\s+/);
+  const ordinato = p.length===2 ? [p[1], p[0]] : p;   // Hoepli scrive "cognome nome"
+  return ordinato.map(w => w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+}
+async function fromHoepli(isbn){
+  const r = await fetch(`${PROXY}https://www.hoepli.it/libro/-/${isbn}.html`);
+  if(!r.ok) throw new Error('proxy HTTP '+r.status);
+  const t = await r.text();
+  if(!t.includes(isbn)) return null;                  // pagina generica o "non trovato"
+  const g = re => { const m = t.match(re); return m ? m[1].trim() : ''; };
+  const titolo = g(/^Title:\s*(.+)$/mi).split(' - ')[0].trim();
+  if(!titolo || /^hoepli/i.test(titolo)) return null;
+  const out = { 'Titolo': titolo, 'ISBN': isbn };
+  const autore  = g(/^##\s*\[([^\]]+)\]/m);
+  const editore = g(/Editore:\s*#*\s*\[\*\*([^\]*]+)\*\*\]/);
+  const anno    = (g(/Pubblicazione:\s*([\d\/]+)/).match(/\d{4}/) || [])[0];
+  const pagine  = g(/Pagine Arabe:\s*(\d+)/);
+  const collana = g(/Collana:\s*(.+)$/m);
+  if(autore)  out['Autore']  = nomeProprio(autore);
+  if(editore) out['Editore'] = editore;
+  if(anno)    out['Anno']    = Number(anno);
+  if(pagine)  out['Pagine']  = Number(pagine);
+  if(collana) out['Tag']     = cleanTags([collana]);
+  return out;
+}
+
+/* Cascata: ogni fonte riempie i campi lasciati vuoti dalle precedenti.
+   Restituisce {data, sources, errors} — un errore di rete o di quota resta
+   distinguibile da un ISBN davvero assente da tutti i cataloghi. */
+async function fetchBookByISBN(raw){
+  const isbn = String(raw).replace(/[^0-9Xx]/g,'');
+  let data = null; const sources = [], errors = [];
+  const manca = k => !data || !data[k];
+  const step = async (nome, fn, saltaSe) => {
+    if(saltaSe && saltaSe()) return;
+    try{ const r = await fn(); if(r){ data = mergeInto(data, r); sources.push(nome); } }
+    catch(e){ errors.push({fonte:nome, msg:e.message||'errore', quota:!!e.quota}); }
+  };
+
+  await step('Google Books', () => gbSearch('isbn:'+isbn, isbn, false));
+  // l'indice isbn: non espone i record di solo metadati: la ricerca libera a volte li trova
+  await step('Google Books (ricerca libera)', () => gbSearch(isbn, isbn, true), () => !manca('Titolo'));
+  // quota separata: funziona anche quando l'API principale risponde 429
+  await step('Google Books (link)', async () => {
+    const dl = await gbDynamicLinks(isbn);
+    if(!dl) return null;
+    if(dl.id && manca('Titolo')){
+      try{ return mergeInto(await gbById(dl.id, isbn), dl.fields); }catch(e){}
+    }
+    return dl.fields;
+  }, () => !manca('Titolo') && !manca('Copertina'));
+  await step('Open Library', () => fromOpenLibrary(isbn));
+  await step('Open Library (opera)', () => fromOpenLibraryWork(isbn), () => !manca('Descrizione'));
+  await step('Hoepli', () => fromHoepli(isbn),
+    () => !USA_PROXY_ITALIANO || (!manca('Titolo') && !manca('Editore') && !manca('Anno')));
+
+  if(data && sources.includes('Hoepli') && sources.length===1)
+    data['Note'] = '⚠️ Dati dalla scheda di vendita Hoepli: controllare titolo e autore.';
+  return { data: (data && data['Titolo']) ? data : null, sources, errors };
 }
 async function lookupISBN(){
   const raw = document.getElementById('isbn-input').value.replace(/[^0-9Xx]/g,'');
   const st = document.getElementById('isbn-status');
   if(raw.length<10){ st.textContent = 'Inserisci un ISBN valido (10 o 13 cifre).'; return; }
   st.textContent = 'Cerco…'; document.getElementById('isbn-btn').disabled = true;
-  const data = await fetchBookByISBN(raw);
+  const { data, sources, errors } = await fetchBookByISBN(raw);
   document.getElementById('isbn-btn').disabled = false;
-  if(data){ st.textContent=''; openBookForm(null, data); }
-  else st.textContent = '❌ Nessun risultato per questo ISBN. Prova con l\'inserimento manuale.';
+  const kaput = errors.length ? ` · ⚠️ non ${errors.length===1?'ha risposto':'hanno risposto'}: ${esc(errors.map(e=>e.fonte).join(', '))}` : '';
+  if(data){
+    st.innerHTML = `✅ Trovato su <b>${esc(sources.join(' + '))}</b>${kaput}`;
+    openBookForm(null, data);
+  }
+  else if(errors.some(e=>e.quota))
+    st.innerHTML = '⏳ Google Books ha esaurito la quota giornaliera per la tua rete: riprova più tardi, oppure inserisci il libro a mano. <i>(Non vuol dire che il libro non esista.)</i>';
+  else if(errors.length)
+    st.innerHTML = '⚠️ Nessuna fonte raggiungibile — ' + esc(errors.map(e=>`${e.fonte}: ${e.msg}`).join(' · ')) + '. Controlla la connessione e riprova.';
+  else
+    st.textContent = '❌ Questo ISBN non risulta in nessuno dei cataloghi consultati. Prova con l\'inserimento manuale.';
 }
 
 /* ================== SCANSIONE COPERTINE (batch) ================== */
@@ -739,7 +921,13 @@ async function uploadScan(recordId, canvas, filename){
 const scanLogEl = () => document.getElementById('scan-log');
 function slog(html, cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.innerHTML=html; scanLogEl().appendChild(d); scanLogEl().scrollTop=1e9; }
 
+/* segna la scansione come in corso, così l'aggiornamento dell'app non la interrompe di nascosto */
 async function processScans(fileList){
+  scanInCorso = true;
+  try{ await eseguiScansioni(fileList); }
+  finally{ scanInCorso = false; }
+}
+async function eseguiScansioni(fileList){
   const {token} = cfg();
   if(!token){ toast('Configura prima il token nelle Impostazioni'); show('impostazioni'); return; }
   const files = [...fileList].filter(f=>f.type.startsWith('image/') || isPDF(f))
@@ -779,7 +967,17 @@ async function processScans(fileList){
     const label = p.back ? p.back.name : p.front.name;
     if(p.isbn){
       if(known.has(p.isbn)){ slog(`⏭️ ${esc(label)}: ISBN ${p.isbn} già in biblioteca, salto`, 'warn'); skipped++; continue; }
-      data = await fetchBookByISBN(p.isbn) || {'Titolo':'Libro ISBN '+p.isbn, 'ISBN':p.isbn, 'Note':'⚠️ Dati non trovati online: completare a mano'};
+      const res = await fetchBookByISBN(p.isbn);
+      data = res.data;
+      if(data && res.sources.length) slog(`&nbsp;&nbsp;↳ dati da ${esc(res.sources.join(' + '))}`);
+      if(res.errors.length) slog(`&nbsp;&nbsp;↳ ⚠️ non ${res.errors.length===1?'ha risposto':'hanno risposto'}: ${esc(res.errors.map(e=>e.fonte).join(', '))}`, 'warn');
+      if(!data){
+        const perQuota = res.errors.some(e=>e.quota);
+        data = {'Titolo':'Libro ISBN '+p.isbn, 'ISBN':p.isbn,
+          'Note': perQuota ? '⚠️ Quota Google Books esaurita durante la scansione: i dati esistono ma non sono stati scaricati. Riapri la scheda e cerca di nuovo l\'ISBN più tardi.'
+                           : '⚠️ Dati non trovati in nessun catalogo: completare a mano'};
+        if(perQuota) slog(`&nbsp;&nbsp;↳ ⏳ quota esaurita: il libro esiste ma i dati non sono arrivati`, 'warn');
+      }
       // niente descrizione dal web? la estraggo con l'OCR dalla quarta di copertina
       if(!data['Descrizione'] && p.back){
         slog(`📝 ${esc(label)}: descrizione non trovata online, leggo la quarta di copertina (OCR)…`);
@@ -799,8 +997,7 @@ async function processScans(fileList){
     }
     data['Possesso']='Posseduto'; if(!data['Stato']) data['Stato']='Da leggere';
     try{
-      const j = await createRec(TBL.libri, data);
-      const rec = j.records[0]; books.push(rec);
+      const rec = await creaLibro(data); books.push(rec);
       if(data['ISBN']) known.add(String(data['ISBN']).replace(/[^0-9]/g,''));
       // 4. carica le scansioni (fronte per primo → diventa la copertina)
       for(const sc of [p.front, p.back].filter(Boolean)){
@@ -808,7 +1005,7 @@ async function processScans(fileList){
         catch(e){ slog(`⚠️ ${esc(sc.name)}: ${esc(e.message)}`, 'warn'); }
       }
       created++;
-      slog(`✅ <b>${esc(rec.fields['Titolo']||data['Titolo'])}</b>${data['Autore']?' — '+esc(data['Autore']):''} aggiunto${viaOCR?' (via OCR, da verificare)':''}`, 'ok');
+      slog(`✅ ${rec.fields['Codice']?`<b>#${esc(rec.fields['Codice'])}</b> `:''}<b>${esc(rec.fields['Titolo']||data['Titolo'])}</b>${data['Autore']?' — '+esc(data['Autore']):''} aggiunto${viaOCR?' (via OCR, da verificare)':''}`, 'ok');
     }catch(e){ slog(`❌ ${esc(label)}: ${esc(e.message)}`, 'err'); failed++; }
   }
   slog(`— Fatto: <b>${created}</b> aggiunti, ${skipped} saltati (doppioni), ${failed} non riconosciuti.`);
@@ -867,6 +1064,8 @@ async function importCSV(){
   st.textContent = `Importo ${recs.length} libri…`;
   let done=0;
   try{
+    let n = await ultimoCodice();
+    recs.forEach(r => r.fields['Codice'] = ++n);
     for(let i=0;i<recs.length;i+=10){
       const j = await createMany(TBL.libri, recs.slice(i,i+10));
       books = books.concat(j.records); done += j.records.length;
@@ -944,6 +1143,41 @@ function modal(html){ document.getElementById('modal-root').innerHTML = `<div cl
 function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
 let toastTimer;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500); }
+
+/* ================== CONTROLLO NUOVA VERSIONE ==================
+   GitHub Pages cambia l'ETag di index.html a ogni deploy, quindi non serve
+   una costante di versione da incrementare a mano. L'header è leggibile solo
+   perché la richiesta è alla stessa origine dell'app.
+   Limite noto: il confronto parte da quello che il server espone all'avvio, quindi
+   segnala i deploy avvenuti mentre la scheda è aperta — non una pagina già vecchia
+   al momento del caricamento (in quel caso ci pensa il max-age di 10 minuti). */
+let versioneAvvio = null, avvisoRimandato = false, checkInCorso = false;
+const CHECK_MS = 5*60*1000;
+
+async function controllaAggiornamenti(){
+  if(avvisoRimandato || checkInCorso) return;
+  checkInCorso = true;
+  try{
+    const r = await fetch(location.href, {method:'HEAD', cache:'no-store'});
+    if(!r.ok) return;
+    const v = r.headers.get('etag') || r.headers.get('last-modified');
+    if(!v) return;                                  // server che non espone nessuno dei due
+    if(versioneAvvio === null){ versioneAvvio = v; return; }   // prima lettura: fa da riferimento
+    if(v !== versioneAvvio) document.getElementById('updatebar').classList.remove('hidden');
+  }catch(e){}                                       // offline, o aperta da file:// — semplicemente non controllo
+  finally{ checkInCorso = false; }
+}
+function applicaAggiornamento(){
+  if(scanInCorso && !confirm('C\'è una scansione in corso: ricaricando perdi i libri non ancora salvati. Aggiornare lo stesso?')) return;
+  location.reload();
+}
+function rimandaAggiornamento(){
+  avvisoRimandato = true;
+  document.getElementById('updatebar').classList.add('hidden');
+}
+controllaAggiornamenti();
+setInterval(controllaAggiornamenti, CHECK_MS);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) controllaAggiornamenti(); });
 
 /* ================== AVVIO ================== */
 if(cfg().token && cfg().base){ show('catalogo'); } else { show('impostazioni'); }
