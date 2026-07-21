@@ -98,6 +98,11 @@
   .setupbox .field{margin-bottom:14px}
   .isbnrow{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px}
   .isbnrow input{flex:1; min-width:200px; font-size:16px}
+  .dropzone{border:2px dashed var(--accent); border-radius:12px; padding:30px 20px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; background:rgba(139,94,52,.03)}
+  .dropzone.drag{border-color:var(--accent-dark); background:rgba(139,94,52,.1); color:var(--accent-dark)}
+  .dropzone b{color:var(--accent-dark)}
+  .scanlog{margin-top:14px; font-size:13.5px; line-height:1.8; max-height:300px; overflow-y:auto}
+  .scanlog .ok{color:var(--green)} .scanlog .err{color:var(--red)} .scanlog .warn{color:var(--amber)}
   a{color:var(--accent-dark)}
   @media (max-width:600px){ .grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px} }
 </style>
@@ -174,6 +179,15 @@
         <button class="btn secondary" onclick="openBookForm(null)">✍️ Inserimento manuale</button>
       </div>
       <p class="note" id="isbn-status"></p>
+      <hr style="border:none; border-top:1px solid var(--line); margin:18px 0">
+      <h3 style="margin-bottom:8px">Scansioni delle copertine</h3>
+      <p class="note" style="margin-bottom:10px">Trascina qui le scansioni dei tuoi libri, anche molte insieme.
+      Dal <b>retro</b> leggo il codice a barre (ISBN) e recupero tutti i dati; il <b>fronte</b> diventa la copertina nel catalogo.
+      <b>L'ordine dei file conta</b>: per ogni libro, prima il fronte poi il retro (es. <i>scan001</i>=fronte, <i>scan002</i>=retro).
+      Se c'è solo il fronte, provo a riconoscere il titolo con l'OCR.</p>
+      <div class="dropzone" id="dropzone">📥 <b>Trascina qui le scansioni</b><br>oppure clicca per scegliere i file</div>
+      <input type="file" id="scan-files" accept="image/*" multiple style="display:none">
+      <div class="scanlog" id="scan-log"></div>
       <hr style="border:none; border-top:1px solid var(--line); margin:18px 0">
       <h3 style="margin-bottom:8px">Importa da file CSV</h3>
       <p class="note" style="margin-bottom:10px">File CSV con intestazioni. Colonne riconosciute (anche in altro ordine):
@@ -352,8 +366,9 @@ function cardHTML(b){
   const badge = loan ? `<span class="badge" style="background:var(--red)">Prestato</span>`
     : f['Stato'] ? `<span class="badge" style="background:${STATO_COLORS[f['Stato']]||'var(--muted)'}">${esc(f['Stato'])}</span>` : '';
   const stars = f['Valutazione'] ? `<div class="stars">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</div>` : '';
+  const cov = coverSrc(f);
   return `<div class="book" onclick="openDetail('${b.id}')">
-    <div class="cover">${f['Copertina'] ? `<img src="${esc(f['Copertina'])}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}</div>
+    <div class="cover">${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}</div>
     <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f['Autore']||'')}</div>${stars}</div>
   </div>`;
 }
@@ -412,9 +427,10 @@ function openDetail(id){
   if(f['Data fine lettura']) kv.push(['Fine lettura', fmtDate(f['Data fine lettura'])]);
   if(f['Prezzo']!=null) kv.push(['Prezzo', '€ '+f['Prezzo']]);
   const isWish = f['Possesso']==='Desiderato';
+  const cov = coverSrc(f);
   modal(`
     <div class="detail">
-      <div class="cover">${f['Copertina']?`<img src="${esc(f['Copertina'])}" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
+      <div class="cover">${cov?`<img src="${esc(cov)}" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
       <div class="meta">
         <h2>${esc(f['Titolo']||'')}</h2>
         <div class="auth">${esc(f['Autore']||'')}</div>
@@ -426,6 +442,7 @@ function openDetail(id){
         </div>
         <dl class="kv">${kv.map(([k,v])=>`<dt>${k}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
         ${f['Note']?`<p class="note" style="white-space:pre-wrap">${esc(f['Note'])}</p>`:''}
+        ${(f['Scansioni']||[]).length?`<p class="note" style="margin-top:8px">📎 Scansioni: ${(f['Scansioni']||[]).map((a,i)=>`<a href="${esc(a.url)}" target="_blank">${i===0?'fronte':(i===1?'retro':'altra '+i)}</a>`).join(' · ')}</p>`:''}
       </div>
     </div>
     <div class="modal-actions">
@@ -505,38 +522,219 @@ async function markPurchased(id){
 }
 
 /* ================== ISBN LOOKUP ================== */
+function volumeToFields(vi, isbn){
+  return { 'Titolo':(vi.title||'') + (vi.subtitle?'. '+vi.subtitle:''), 'Autore':(vi.authors||[]).join(', '),
+    'Editore':vi.publisher||'', 'Anno': vi.publishedDate?Number(vi.publishedDate.slice(0,4)):null,
+    'Pagine': vi.pageCount||null, 'ISBN':isbn||'',
+    'Copertina': vi.imageLinks ? (vi.imageLinks.thumbnail||vi.imageLinks.smallThumbnail||'').replace('http://','https://') : '',
+    'Lingua': vi.language==='it'?'Italiano':vi.language==='en'?'Inglese':vi.language==='fr'?'Francese':vi.language==='de'?'Tedesco':vi.language==='es'?'Spagnolo':'' };
+}
+async function fetchBookByISBN(raw){
+  try{
+    const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}`).then(r=>r.json());
+    if(g.totalItems>0) return volumeToFields(g.items[0].volumeInfo, raw);
+  }catch(e){}
+  try{
+    const o = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${raw}&format=json&jscmd=data`).then(r=>r.json());
+    const d = o['ISBN:'+raw];
+    if(d) return { 'Titolo':d.title||'', 'Autore':(d.authors||[]).map(a=>a.name).join(', '),
+      'Editore':(d.publishers||[]).map(p=>p.name).join(', '),
+      'Anno': d.publish_date?Number((d.publish_date.match(/\d{4}/)||[null])[0]):null,
+      'Pagine': d.number_of_pages||null, 'ISBN':raw,
+      'Copertina': d.cover ? (d.cover.large||d.cover.medium||d.cover.small||'') : '' };
+  }catch(e){}
+  return null;
+}
 async function lookupISBN(){
   const raw = document.getElementById('isbn-input').value.replace(/[^0-9Xx]/g,'');
   const st = document.getElementById('isbn-status');
   if(raw.length<10){ st.textContent = 'Inserisci un ISBN valido (10 o 13 cifre).'; return; }
   st.textContent = 'Cerco…'; document.getElementById('isbn-btn').disabled = true;
-  let data = null;
-  try{
-    const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}`).then(r=>r.json());
-    if(g.totalItems>0){
-      const vi = g.items[0].volumeInfo;
-      data = { 'Titolo':vi.title + (vi.subtitle?'. '+vi.subtitle:''), 'Autore':(vi.authors||[]).join(', '),
-        'Editore':vi.publisher||'', 'Anno': vi.publishedDate?Number(vi.publishedDate.slice(0,4)):null,
-        'Pagine': vi.pageCount||null, 'ISBN':raw,
-        'Copertina': vi.imageLinks ? (vi.imageLinks.thumbnail||vi.imageLinks.smallThumbnail||'').replace('http://','https://') : '',
-        'Lingua': vi.language==='it'?'Italiano':vi.language==='en'?'Inglese':vi.language==='fr'?'Francese':vi.language==='de'?'Tedesco':vi.language==='es'?'Spagnolo':'' };
-    }
-  }catch(e){}
-  if(!data){
-    try{
-      const o = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${raw}&format=json&jscmd=data`).then(r=>r.json());
-      const d = o['ISBN:'+raw];
-      if(d) data = { 'Titolo':d.title||'', 'Autore':(d.authors||[]).map(a=>a.name).join(', '),
-        'Editore':(d.publishers||[]).map(p=>p.name).join(', '),
-        'Anno': d.publish_date?Number((d.publish_date.match(/\d{4}/)||[null])[0]):null,
-        'Pagine': d.number_of_pages||null, 'ISBN':raw,
-        'Copertina': d.cover ? (d.cover.large||d.cover.medium||d.cover.small||'') : '' };
-    }catch(e){}
-  }
+  const data = await fetchBookByISBN(raw);
   document.getElementById('isbn-btn').disabled = false;
   if(data){ st.textContent=''; openBookForm(null, data); }
   else st.textContent = '❌ Nessun risultato per questo ISBN. Prova con l\'inserimento manuale.';
 }
+
+/* ================== SCANSIONE COPERTINE (batch) ================== */
+const CDN = {
+  zxing: 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js',
+  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+};
+const loadedScripts = {};
+function loadScript(src){
+  if(loadedScripts[src]) return loadedScripts[src];
+  loadedScripts[src] = new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src=src;
+    s.onload=res; s.onerror=()=>{ delete loadedScripts[src]; rej(new Error('Impossibile caricare '+src)); };
+    document.head.appendChild(s);
+  });
+  return loadedScripts[src];
+}
+
+async function fileToCanvas(file, maxSide){
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, maxSide/Math.max(bmp.width,bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  bmp.close();
+  return c;
+}
+function rotateCanvas(c, deg){
+  const r = document.createElement('canvas');
+  if(deg===90||deg===270){ r.width=c.height; r.height=c.width; } else { r.width=c.width; r.height=c.height; }
+  const ctx = r.getContext('2d');
+  ctx.translate(r.width/2, r.height/2); ctx.rotate(deg*Math.PI/180);
+  ctx.drawImage(c, -c.width/2, -c.height/2);
+  return r;
+}
+function isbnFromCode(txt){
+  const d = String(txt||'').replace(/[^0-9]/g,'');
+  return (d.length===13 && (d.startsWith('978')||d.startsWith('979'))) ? d : null;
+}
+
+/* prova prima l'API nativa BarcodeDetector, poi ZXing; tenta 4 rotazioni */
+async function decodeBarcode(canvas){
+  if('BarcodeDetector' in window){
+    try{
+      const det = new BarcodeDetector({formats:['ean_13']});
+      for(const deg of [0,90,180,270]){
+        const codes = await det.detect(deg? rotateCanvas(canvas,deg) : canvas);
+        for(const c of codes){ const i = isbnFromCode(c.rawValue); if(i) return i; }
+      }
+    }catch(e){}
+  }
+  try{
+    await loadScript(CDN.zxing);
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13]);
+    const reader = new ZXing.MultiFormatReader(); reader.setHints(hints);
+    for(const deg of [0,90,180,270]){
+      const c = deg? rotateCanvas(canvas,deg) : canvas;
+      try{
+        const lum = new ZXing.HTMLCanvasElementLuminanceSource(c);
+        const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+        const res = reader.decode(bin);
+        const i = isbnFromCode(res.getText()); if(i) return i;
+      }catch(e){} finally{ reader.reset(); }
+    }
+  }catch(e){}
+  return null;
+}
+
+/* OCR del fronte → ricerca su Google Books per titolo */
+async function ocrLookup(canvas){
+  await loadScript(CDN.tesseract);
+  const { data } = await Tesseract.recognize(canvas, 'ita+eng');
+  const lines = (data.text||'').split('\n').map(l=>l.trim().replace(/[|_~`^]/g,''))
+    .filter(l => l.length>3 && /[a-zA-Zàèéìòù]/.test(l));
+  if(!lines.length) return null;
+  const query = lines.sort((a,b)=>b.length-a.length).slice(0,3).join(' ').slice(0,120);
+  try{
+    const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=1`).then(r=>r.json());
+    if(g.totalItems>0){
+      const item = g.items[0];
+      const ids = item.volumeInfo.industryIdentifiers||[];
+      const isbn = (ids.find(x=>x.type==='ISBN_13')||{}).identifier || '';
+      return volumeToFields(item.volumeInfo, isbn);
+    }
+  }catch(e){}
+  return null;
+}
+
+/* upload di una scansione come allegato Airtable (campo "Scansioni") */
+async function uploadScan(recordId, canvas, filename){
+  const {token, base} = cfg();
+  const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+  const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent('Scansioni')}/uploadAttachment`,{
+    method:'POST',
+    headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ contentType:'image/jpeg', file: base64, filename: (filename||'scan').replace(/\.[^.]+$/,'')+'.jpg' })
+  });
+  if(!res.ok){ let m='Upload scansione fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
+  return res.json();
+}
+
+const scanLogEl = () => document.getElementById('scan-log');
+function slog(html, cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.innerHTML=html; scanLogEl().appendChild(d); scanLogEl().scrollTop=1e9; }
+
+async function processScans(fileList){
+  const {token} = cfg();
+  if(!token){ toast('Configura prima il token nelle Impostazioni'); show('impostazioni'); return; }
+  const files = [...fileList].filter(f=>f.type.startsWith('image/'))
+    .sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+  if(!files.length){ toast('Nessuna immagine tra i file trascinati'); return; }
+  scanLogEl().innerHTML='';
+  slog(`🔎 Analizzo ${files.length} scansion${files.length===1?'e':'i'}…`);
+
+  // 1. decodifica barcode per ogni immagine
+  const items = [];
+  for(const file of files){
+    let canvas;
+    try{ canvas = await fileToCanvas(file, 1800); }
+    catch(e){ slog(`❌ ${esc(file.name)}: immagine non leggibile`, 'err'); continue; }
+    const isbn = await decodeBarcode(canvas);
+    items.push({file, canvas, isbn});
+    slog(isbn ? `📕 ${esc(file.name)}: codice a barre → ISBN <b>${isbn}</b> (retro)` : `🖼️ ${esc(file.name)}: nessun barcode (fronte)`);
+  }
+
+  // 2. abbina fronte (senza barcode) + retro (con barcode) in ordine di file
+  const pairs = []; let pendingFront = null;
+  for(const it of items){
+    if(it.isbn){ pairs.push({isbn:it.isbn, back:it, front:pendingFront}); pendingFront=null; }
+    else{ if(pendingFront) pairs.push({front:pendingFront}); pendingFront=it; }
+  }
+  if(pendingFront) pairs.push({front:pendingFront});
+
+  // 3. crea i libri
+  let created=0, skipped=0, failed=0;
+  const known = new Set(books.map(b=>String(b.fields['ISBN']||'').replace(/[^0-9Xx]/g,'')).filter(Boolean));
+  for(const p of pairs){
+    let data=null, viaOCR=false;
+    const label = p.back ? p.back.file.name : p.front.file.name;
+    if(p.isbn){
+      if(known.has(p.isbn)){ slog(`⏭️ ${esc(label)}: ISBN ${p.isbn} già in biblioteca, salto`, 'warn'); skipped++; continue; }
+      data = await fetchBookByISBN(p.isbn) || {'Titolo':'Libro ISBN '+p.isbn, 'ISBN':p.isbn, 'Note':'⚠️ Dati non trovati online: completare a mano'};
+    }else{
+      slog(`🔤 ${esc(label)}: nessun barcode, provo l'OCR del fronte (può richiedere un po')…`);
+      try{ data = await ocrLookup(p.front.canvas); }catch(e){ slog(`❌ OCR non disponibile: ${esc(e.message)}`, 'err'); }
+      if(!data){ slog(`❌ ${esc(label)}: libro non riconosciuto. Aggiungilo via ISBN o a mano.`, 'err'); failed++; continue; }
+      viaOCR = true;
+      const dnorm = String(data['ISBN']||'').replace(/[^0-9]/g,'');
+      if(dnorm && known.has(dnorm)){ slog(`⏭️ ${esc(label)}: "${esc(data['Titolo'])}" già in biblioteca, salto`, 'warn'); skipped++; continue; }
+      data['Note'] = '⚠️ Riconosciuto via OCR dalla copertina: verificare i dati';
+    }
+    data['Possesso']='Posseduto'; if(!data['Stato']) data['Stato']='Da leggere';
+    try{
+      const j = await createRec(TBL.libri, data);
+      const rec = j.records[0]; books.push(rec);
+      if(data['ISBN']) known.add(String(data['ISBN']).replace(/[^0-9]/g,''));
+      // 4. carica le scansioni (fronte per primo → diventa la copertina)
+      for(const sc of [p.front, p.back].filter(Boolean)){
+        try{ const upd = await uploadScan(rec.id, sc.canvas, sc.file.name); if(upd && upd.fields) rec.fields = upd.fields; }
+        catch(e){ slog(`⚠️ ${esc(sc.file.name)}: ${esc(e.message)}`, 'warn'); }
+      }
+      created++;
+      slog(`✅ <b>${esc(rec.fields['Titolo']||data['Titolo'])}</b>${data['Autore']?' — '+esc(data['Autore']):''} aggiunto${viaOCR?' (via OCR, da verificare)':''}`, 'ok');
+    }catch(e){ slog(`❌ ${esc(label)}: ${esc(e.message)}`, 'err'); failed++; }
+  }
+  slog(`— Fatto: <b>${created}</b> aggiunti, ${skipped} saltati (doppioni), ${failed} non riconosciuti.`);
+  fillFilters(); renderAll();
+  if(created) toast(`📚 ${created} libr${created===1?'o':'i'} aggiunt${created===1?'o':'i'} dalle scansioni`);
+}
+
+function initDropzone(){
+  const dz = document.getElementById('dropzone');
+  const fi = document.getElementById('scan-files');
+  dz.addEventListener('click', ()=>fi.click());
+  fi.addEventListener('change', ()=>{ if(fi.files.length) processScans(fi.files); fi.value=''; });
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) processScans(e.dataTransfer.files); });
+}
+initDropzone();
 
 /* ================== IMPORT CSV ================== */
 function parseCSV(text){
@@ -644,6 +842,11 @@ async function delCollocazione(id){
 
 /* ================== UTILS ================== */
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function coverSrc(f){
+  const a = (f['Scansioni']||[])[0];
+  if(a){ const t=a.thumbnails; return (t && t.large && t.large.url) || a.url || ''; }
+  return f['Copertina']||'';
+}
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
 function modal(html){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
