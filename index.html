@@ -30,6 +30,8 @@
   .toolbar input[type=search]{flex:1; min-width:220px}
   input,select,textarea{font:inherit; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); outline:none}
   input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  input[readonly]{background:var(--bg); color:var(--muted); cursor:not-allowed}
+  input[readonly]:focus{border-color:var(--line)}
   textarea{width:100%; min-height:70px; resize:vertical}
   .btn{display:inline-flex; align-items:center; gap:7px; border:none; cursor:pointer; font:inherit; font-weight:600; padding:10px 16px; border-radius:10px; background:var(--accent); color:#fff}
   .btn:hover{background:var(--accent-dark)}
@@ -518,6 +520,10 @@ function openBookForm(id, prefill){
   modal(`
     <h2>${b?'Modifica libro':'Nuovo libro'}</h2>
     <div class="frow">
+      <div class="field"><label>Codice di catalogo</label>
+        <input value="${f['Codice'] ? '#'+esc(f['Codice']) : ''}" readonly
+               placeholder="${b?'—':'assegnato al salvataggio'}"
+               title="Assegnato automaticamente dall'app. Non modificabile: i codici non vengono mai riusati."></div>
       <div class="field" style="grid-column:1/-1"><label>Titolo *</label><input id="bf-titolo" value="${escAttr(f['Titolo']||'')}"></div>
       <div class="field"><label>Autore</label><input id="bf-autore" value="${escAttr(f['Autore']||'')}"></div>
       <div class="field"><label>ISBN</label><input id="bf-isbn" value="${escAttr(f['ISBN']||'')}"></div>
