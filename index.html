@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La mia Biblioteca</title>
+<style>
+  :root{
+    --bg:#f7f4ef; --card:#ffffff; --ink:#2b2620; --muted:#8a7f70;
+    --accent:#8b5e34; --accent-dark:#6f4a27; --line:#e6dfd4;
+    --green:#3e7a4e; --red:#b04a3a; --amber:#c08a2d; --blue:#3d6b8e;
+    --radius:14px; --shadow:0 2px 10px rgba(60,45,25,.08);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); min-height:100vh}
+  h1,h2,h3,.serif{font-family:Georgia,"Times New Roman",serif}
+  header{background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:50}
+  .topbar{max-width:1200px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  .logo{font-size:22px; font-weight:700; font-family:Georgia,serif; color:var(--accent-dark); white-space:nowrap}
+  .logo span{color:var(--ink)}
+  nav{display:flex; gap:4px; flex-wrap:wrap}
+  nav button{border:none; background:none; padding:8px 14px; border-radius:999px; cursor:pointer; font-size:14.5px; color:var(--muted); font-weight:500}
+  nav button.active{background:var(--accent); color:#fff}
+  nav button:hover:not(.active){background:var(--bg)}
+  main{max-width:1200px; margin:0 auto; padding:24px 20px 80px}
+  .hidden{display:none !important}
+
+  /* toolbar */
+  .toolbar{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; align-items:center}
+  .toolbar input[type=search]{flex:1; min-width:220px}
+  input,select,textarea{font:inherit; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{width:100%; min-height:70px; resize:vertical}
+  .btn{display:inline-flex; align-items:center; gap:7px; border:none; cursor:pointer; font:inherit; font-weight:600; padding:10px 16px; border-radius:10px; background:var(--accent); color:#fff}
+  .btn:hover{background:var(--accent-dark)}
+  .btn.secondary{background:var(--card); color:var(--ink); border:1px solid var(--line)}
+  .btn.secondary:hover{background:var(--bg)}
+  .btn.danger{background:var(--red)}
+  .btn.small{padding:6px 12px; font-size:13.5px}
+  .btn:disabled{opacity:.5; cursor:not-allowed}
+
+  /* grid catalogo */
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:18px}
+  .book{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; cursor:pointer; transition:transform .12s; display:flex; flex-direction:column}
+  .book:hover{transform:translateY(-3px)}
+  .cover{aspect-ratio:2/3; background:linear-gradient(135deg,#d9cbb8,#b9a488); display:flex; align-items:center; justify-content:center; position:relative}
+  .cover img{width:100%; height:100%; object-fit:cover}
+  .cover .noimg{font-family:Georgia,serif; font-size:13px; color:#6f5c42; padding:12px; text-align:center}
+  .badge{position:absolute; top:8px; left:8px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; color:#fff}
+  .binfo{padding:10px 12px 12px}
+  .btitle{font-size:14px; font-weight:600; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+  .bauthor{font-size:12.5px; color:var(--muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .stars{color:var(--amber); font-size:12px; margin-top:4px; letter-spacing:1px}
+
+  .empty{color:var(--muted); text-align:center; padding:60px 20px; font-size:15px}
+  .counts{color:var(--muted); font-size:13.5px; margin-bottom:14px}
+
+  /* stat tiles */
+  .tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:22px}
+  .tile{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px}
+  .tile .num{font-size:26px; font-weight:700; font-family:Georgia,serif; color:var(--accent-dark)}
+  .tile .lbl{font-size:12.5px; color:var(--muted); margin-top:2px}
+
+  /* modal */
+  .overlay{position:fixed; inset:0; background:rgba(40,30,15,.45); display:flex; align-items:flex-start; justify-content:center; padding:30px 15px; z-index:100; overflow-y:auto}
+  .modal{background:var(--card); border-radius:16px; width:100%; max-width:680px; padding:26px; box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .modal h2{margin-bottom:18px; font-size:21px}
+  .frow{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:12px}
+  .field{display:flex; flex-direction:column; gap:5px}
+  .field label{font-size:12.5px; font-weight:600; color:var(--muted)}
+  .modal-actions{display:flex; gap:10px; justify-content:flex-end; margin-top:20px; flex-wrap:wrap}
+  .modal-actions .left{margin-right:auto}
+
+  /* detail */
+  .detail{display:flex; gap:22px; flex-wrap:wrap}
+  .detail .cover{width:170px; flex-shrink:0; border-radius:10px; overflow:hidden; aspect-ratio:2/3}
+  .detail .meta{flex:1; min-width:240px}
+  .meta h2{font-size:22px; margin-bottom:4px}
+  .meta .auth{color:var(--muted); margin-bottom:12px}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:14px; margin-bottom:14px}
+  .kv dt{color:var(--muted)} .kv dd{font-weight:500}
+  .pill{display:inline-block; padding:3px 10px; border-radius:999px; font-size:12.5px; font-weight:600; color:#fff}
+
+  /* tabelle */
+  table{width:100%; border-collapse:collapse; background:var(--card); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow)}
+  th,td{text-align:left; padding:11px 14px; font-size:14px; border-bottom:1px solid var(--line)}
+  th{font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:12px 22px; border-radius:999px; font-size:14px; z-index:200; box-shadow:var(--shadow); opacity:0; transition:opacity .25s; pointer-events:none; max-width:90vw; text-align:center}
+  .toast.show{opacity:1}
+  .spinner{border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; width:26px; height:26px; animation:spin .8s linear infinite; margin:40px auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .note{font-size:13px; color:var(--muted); line-height:1.5}
+  .setupbox{max-width:560px; margin:40px auto; background:var(--card); border-radius:16px; padding:30px; box-shadow:var(--shadow)}
+  .setupbox h2{margin-bottom:8px}
+  .setupbox p{margin-bottom:16px; color:var(--muted); font-size:14.5px; line-height:1.55}
+  .setupbox .field{margin-bottom:14px}
+  .isbnrow{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px}
+  .isbnrow input{flex:1; min-width:200px; font-size:16px}
+  a{color:var(--accent-dark)}
+  @media (max-width:600px){ .grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="topbar">
+    <div class="logo">📚 La mia <span>Biblioteca</span></div>
+    <nav id="nav">
+      <button data-view="catalogo" class="active">Catalogo</button>
+      <button data-view="aggiungi">+ Aggiungi</button>
+      <button data-view="prestiti">Prestiti</button>
+      <button data-view="wishlist">Lista desideri</button>
+      <button data-view="collocazioni">Collocazioni</button>
+      <button data-view="impostazioni">⚙︎</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ SETUP / IMPOSTAZIONI ============ -->
+  <section id="view-impostazioni" class="hidden">
+    <div class="setupbox">
+      <h2>Collega Airtable</h2>
+      <p>Per funzionare, l'app ha bisogno di un <b>Personal Access Token</b> di Airtable e dell'<b>ID della base</b>.
+      Crea il token su <a href="https://airtable.com/create/tokens" target="_blank">airtable.com/create/tokens</a> con gli scope
+      <code>data.records:read</code> e <code>data.records:write</code>, limitato alla base "Biblioteca Personale".
+      L'ID base inizia con <code>app…</code> (lo trovi nell'URL della base). I dati restano nel tuo browser.</p>
+      <div class="field"><label>Personal Access Token</label><input type="password" id="cfg-token" placeholder="pat…"></div>
+      <div class="field"><label>ID Base</label><input type="text" id="cfg-base" placeholder="appXXXXXXXXXXXXXX"></div>
+      <div style="display:flex; gap:10px; margin-top:6px">
+        <button class="btn" onclick="saveConfig()">Salva e connetti</button>
+        <button class="btn secondary" onclick="testConnection()">Prova connessione</button>
+      </div>
+      <p id="cfg-status" style="margin-top:14px"></p>
+    </div>
+  </section>
+
+  <!-- ============ CATALOGO ============ -->
+  <section id="view-catalogo">
+    <div class="tiles" id="tiles"></div>
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Cerca per titolo, autore, ISBN…" oninput="renderCatalog()">
+      <select id="f-stato" onchange="renderCatalog()">
+        <option value="">Stato: tutti</option>
+        <option>Da leggere</option><option>In lettura</option><option>Letto</option><option>Abbandonato</option>
+      </select>
+      <select id="f-genere" onchange="renderCatalog()"><option value="">Genere: tutti</option></select>
+      <select id="f-coll" onchange="renderCatalog()"><option value="">Collocazione: tutte</option></select>
+      <select id="f-sort" onchange="renderCatalog()">
+        <option value="Titolo">Ordina: titolo</option>
+        <option value="Autore">Ordina: autore</option>
+        <option value="Anno">Ordina: anno</option>
+        <option value="recenti">Ordina: aggiunti di recente</option>
+      </select>
+      <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
+    </div>
+    <div class="counts" id="count"></div>
+    <div id="catalog" class="grid"></div>
+    <div id="catalog-empty" class="empty hidden">Nessun libro trovato.</div>
+    <div id="catalog-loading" class="spinner hidden"></div>
+  </section>
+
+  <!-- ============ AGGIUNGI ============ -->
+  <section id="view-aggiungi" class="hidden">
+    <div class="setupbox" style="margin-top:10px; max-width:680px">
+      <h2>Aggiungi un libro</h2>
+      <p>Inserisci l'ISBN e recupero automaticamente i dati, oppure compila la scheda a mano.</p>
+      <div class="isbnrow">
+        <input type="text" id="isbn-input" placeholder="ISBN (es. 9788804668237)" onkeydown="if(event.key==='Enter')lookupISBN()">
+        <button class="btn" id="isbn-btn" onclick="lookupISBN()">🔍 Cerca ISBN</button>
+        <button class="btn secondary" onclick="openBookForm(null)">✍️ Inserimento manuale</button>
+      </div>
+      <p class="note" id="isbn-status"></p>
+      <hr style="border:none; border-top:1px solid var(--line); margin:18px 0">
+      <h3 style="margin-bottom:8px">Importa da file CSV</h3>
+      <p class="note" style="margin-bottom:10px">File CSV con intestazioni. Colonne riconosciute (anche in altro ordine):
+      <b>Titolo</b> (obbligatoria), Autore, ISBN, Editore, Anno, Genere, Stato, Pagine, Lingua, Note. Separatore: virgola o punto e virgola.</p>
+      <input type="file" id="csv-file" accept=".csv,text/csv">
+      <button class="btn secondary" style="margin-top:10px" onclick="importCSV()">Importa CSV</button>
+      <p class="note" id="csv-status" style="margin-top:8px"></p>
+    </div>
+  </section>
+
+  <!-- ============ PRESTITI ============ -->
+  <section id="view-prestiti" class="hidden">
+    <h2 style="margin-bottom:16px">Prestiti</h2>
+    <div id="loans-wrap"></div>
+  </section>
+
+  <!-- ============ WISHLIST ============ -->
+  <section id="view-wishlist" class="hidden">
+    <h2 style="margin-bottom:6px">Lista desideri</h2>
+    <p class="note" style="margin-bottom:16px">Libri da acquistare. Quando li compri, clicca sul libro e premi "Acquistato".</p>
+    <div id="wishlist" class="grid"></div>
+    <div id="wishlist-empty" class="empty hidden">La lista desideri è vuota. Aggiungi un libro scegliendo "Desiderato" come possesso.</div>
+  </section>
+
+  <!-- ============ COLLOCAZIONI ============ -->
+  <section id="view-collocazioni" class="hidden">
+    <h2 style="margin-bottom:16px">Collocazioni fisiche</h2>
+    <div class="toolbar">
+      <input type="text" id="new-coll" placeholder="Nuova collocazione (es. Studio · Libreria A · Ripiano 2)" style="flex:1; min-width:260px">
+      <button class="btn" onclick="addCollocazione()">Aggiungi</button>
+    </div>
+    <div id="coll-list"></div>
+  </section>
+
+</main>
+
+<div id="modal-root"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================== CONFIG & STATO ================== */
+const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti' };
+const STATO_COLORS = {'Da leggere':'var(--blue)','In lettura':'var(--amber)','Letto':'var(--green)','Abbandonato':'var(--muted)'};
+const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fantasy','Storia','Biografia','Poesia','Arte','Scienza','Filosofia','Viaggi','Fumetto','Bambini/Ragazzi','Altro'];
+let mem = {};           // fallback se localStorage non disponibile
+let books = [], colls = [], loans = [];
+let loaded = false;
+
+function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
+const DEFAULT_BASE = 'appI6zidIy0DriyoG'; // Base "Biblioteca Personale"
+function cfg(){ return { token: store('bib_token'), base: store('bib_base') || DEFAULT_BASE }; }
+
+/* ================== API AIRTABLE ================== */
+async function api(path, opts={}, retry=0){
+  const {token, base} = cfg();
+  if(!token || !base) throw new Error('Configura token e base nelle Impostazioni.');
+  const res = await fetch(`https://api.airtable.com/v0/${base}/${path}`, {
+    ...opts,
+    headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json', ...(opts.headers||{}) }
+  });
+  if(res.status===429 && retry<3){ await new Promise(r=>setTimeout(r,1200)); return api(path,opts,retry+1); }
+  if(!res.ok){
+    let msg = `Errore Airtable (${res.status})`;
+    try{ const j = await res.json(); if(j.error) msg += ': ' + (j.error.message || j.error.type || JSON.stringify(j.error)); }catch(e){}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+async function listAll(table, params=''){
+  let records = [], offset = '';
+  do{
+    const j = await api(`${encodeURIComponent(table)}?pageSize=100${params}${offset?'&offset='+offset:''}`);
+    records = records.concat(j.records); offset = j.offset || '';
+  }while(offset);
+  return records;
+}
+const createRec  = (t, fields) => api(encodeURIComponent(t), {method:'POST', body:JSON.stringify({records:[{fields}], typecast:true})});
+const createMany = (t, recs)   => api(encodeURIComponent(t), {method:'POST', body:JSON.stringify({records:recs, typecast:true})});
+const updateRec  = (t, id, fields) => api(`${encodeURIComponent(t)}/${id}`, {method:'PATCH', body:JSON.stringify({fields, typecast:true})});
+const deleteRec  = (t, id) => api(`${encodeURIComponent(t)}/${id}`, {method:'DELETE'});
+
+/* ================== CARICAMENTO DATI ================== */
+async function loadAll(force){
+  if(loaded && !force) return;
+  const {token, base} = cfg();
+  if(!token || !base){ show('impostazioni'); return; }
+  document.getElementById('catalog-loading').classList.remove('hidden');
+  try{
+    [books, colls, loans] = await Promise.all([ listAll(TBL.libri), listAll(TBL.coll), listAll(TBL.prestiti) ]);
+    loaded = true;
+    fillFilters(); renderAll();
+  }catch(e){ toast(e.message); if(String(e.message).includes('401')||String(e.message).includes('403')) show('impostazioni'); }
+  document.getElementById('catalog-loading').classList.add('hidden');
+}
+function collName(id){ const c = colls.find(c=>c.id===id); return c ? (c.fields['Nome']||'') : ''; }
+function bookById(id){ return books.find(b=>b.id===id); }
+function activeLoanFor(bookId){ return loans.find(l => (l.fields['Libro']||[]).includes(bookId) && l.fields['Stato']!=='Restituito'); }
+
+/* ================== NAVIGAZIONE ================== */
+document.getElementById('nav').addEventListener('click', e=>{
+  if(e.target.dataset.view) show(e.target.dataset.view);
+});
+function show(view){
+  document.querySelectorAll('main > section').forEach(s=>s.classList.add('hidden'));
+  document.getElementById('view-'+view).classList.remove('hidden');
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  if(view==='impostazioni'){
+    document.getElementById('cfg-token').value = cfg().token || '';
+    document.getElementById('cfg-base').value  = cfg().base  || '';
+  }
+  if(['catalogo','prestiti','wishlist','collocazioni'].includes(view)) loadAll();
+}
+
+/* ================== IMPOSTAZIONI ================== */
+function saveConfig(){
+  const t = document.getElementById('cfg-token').value.trim();
+  const b = document.getElementById('cfg-base').value.trim();
+  if(!t || !b){ toast('Inserisci token e ID base'); return; }
+  store('bib_token', t); store('bib_base', b);
+  testConnection(true);
+}
+async function testConnection(goCatalog){
+  const st = document.getElementById('cfg-status');
+  st.textContent = 'Verifico…';
+  try{
+    await api(`${encodeURIComponent(TBL.libri)}?maxRecords=1`);
+    st.innerHTML = '✅ Connessione riuscita!';
+    if(goCatalog){ loaded=false; show('catalogo'); }
+  }catch(e){ st.innerHTML = '❌ ' + e.message; }
+}
+
+/* ================== RENDER ================== */
+function renderAll(){ renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); }
+
+function renderTiles(){
+  const owned = books.filter(b => (b.fields['Possesso']||'Posseduto')!=='Desiderato');
+  const read  = owned.filter(b => b.fields['Stato']==='Letto').length;
+  const reading = owned.filter(b => b.fields['Stato']==='In lettura').length;
+  const out = loans.filter(l => l.fields['Stato']!=='Restituito').length;
+  const wish = books.length - owned.length;
+  document.getElementById('tiles').innerHTML = [
+    [owned.length,'Libri in biblioteca'], [read,'Letti'], [reading,'In lettura'], [out,'In prestito'], [wish,'Nella lista desideri']
+  ].map(([n,l])=>`<div class="tile"><div class="num">${n}</div><div class="lbl">${l}</div></div>`).join('');
+}
+
+function fillFilters(){
+  const g = document.getElementById('f-genere');
+  const gset = new Set(); books.forEach(b => (b.fields['Genere']||[]).forEach(x=>gset.add(x)));
+  g.innerHTML = '<option value="">Genere: tutti</option>' + [...gset].sort().map(x=>`<option>${esc(x)}</option>`).join('');
+  const c = document.getElementById('f-coll');
+  c.innerHTML = '<option value="">Collocazione: tutte</option>' + colls.map(x=>`<option value="${x.id}">${esc(x.fields['Nome']||'')}</option>`).join('');
+}
+
+function renderCatalog(){
+  const q = (document.getElementById('q').value||'').toLowerCase();
+  const fs = document.getElementById('f-stato').value;
+  const fg = document.getElementById('f-genere').value;
+  const fc = document.getElementById('f-coll').value;
+  const sort = document.getElementById('f-sort').value;
+  let list = books.filter(b => (b.fields['Possesso']||'Posseduto')!=='Desiderato');
+  if(q)  list = list.filter(b => ['Titolo','Autore','ISBN','Editore'].some(f => String(b.fields[f]||'').toLowerCase().includes(q)));
+  if(fs) list = list.filter(b => b.fields['Stato']===fs);
+  if(fg) list = list.filter(b => (b.fields['Genere']||[]).includes(fg));
+  if(fc) list = list.filter(b => (b.fields['Collocazione']||[]).includes(fc));
+  if(sort==='recenti') list.sort((a,b)=> (b.createdTime||'').localeCompare(a.createdTime||''));
+  else if(sort==='Anno') list.sort((a,b)=> (a.fields['Anno']||0)-(b.fields['Anno']||0));
+  else list.sort((a,b)=> String(a.fields[sort]||'').localeCompare(String(b.fields[sort]||''), 'it'));
+  document.getElementById('count').textContent = `${list.length} libr${list.length===1?'o':'i'}`;
+  document.getElementById('catalog').innerHTML = list.map(cardHTML).join('');
+  document.getElementById('catalog-empty').classList.toggle('hidden', list.length>0 || !loaded);
+}
+
+function cardHTML(b){
+  const f = b.fields;
+  const loan = activeLoanFor(b.id);
+  const badge = loan ? `<span class="badge" style="background:var(--red)">Prestato</span>`
+    : f['Stato'] ? `<span class="badge" style="background:${STATO_COLORS[f['Stato']]||'var(--muted)'}">${esc(f['Stato'])}</span>` : '';
+  const stars = f['Valutazione'] ? `<div class="stars">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</div>` : '';
+  return `<div class="book" onclick="openDetail('${b.id}')">
+    <div class="cover">${f['Copertina'] ? `<img src="${esc(f['Copertina'])}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}</div>
+    <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f['Autore']||'')}</div>${stars}</div>
+  </div>`;
+}
+
+function renderWishlist(){
+  const list = books.filter(b => b.fields['Possesso']==='Desiderato');
+  document.getElementById('wishlist').innerHTML = list.map(cardHTML).join('');
+  document.getElementById('wishlist-empty').classList.toggle('hidden', list.length>0);
+}
+
+function renderLoans(){
+  const wrap = document.getElementById('loans-wrap');
+  const act = loans.filter(l=>l.fields['Stato']!=='Restituito');
+  const past = loans.filter(l=>l.fields['Stato']==='Restituito');
+  const row = l => {
+    const f=l.fields; const b = bookById((f['Libro']||[])[0]);
+    const late = f['Stato']!=='Restituito' && f['Restituzione prevista'] && f['Restituzione prevista'] < new Date().toISOString().slice(0,10);
+    return `<tr>
+      <td><b>${esc(b?b.fields['Titolo']:'—')}</b></td>
+      <td>${esc(f['Prestato a']||'')}</td>
+      <td>${fmtDate(f['Data prestito'])}</td>
+      <td>${late?'<span style="color:var(--red);font-weight:700">':''}${fmtDate(f['Restituzione prevista'])}${late?' ⚠️</span>':''}</td>
+      <td>${f['Stato']==='Restituito' ? fmtDate(f['Data restituzione']) : `<button class="btn small" onclick="returnLoan('${l.id}')">✓ Restituito</button>`}</td>
+    </tr>`;
+  };
+  wrap.innerHTML = (act.length===0 && past.length===0) ? '<div class="empty">Nessun prestito registrato. Apri la scheda di un libro e premi "Presta".</div>' :
+   `<h3 style="margin-bottom:10px">In corso (${act.length})</h3>
+    ${act.length? `<table><tr><th>Libro</th><th>Prestato a</th><th>Dal</th><th>Rientro previsto</th><th></th></tr>${act.map(row).join('')}</table>` : '<p class="note">Nessun prestito in corso.</p>'}
+    <h3 style="margin:24px 0 10px">Storico (${past.length})</h3>
+    ${past.length? `<table><tr><th>Libro</th><th>Prestato a</th><th>Dal</th><th>Previsto</th><th>Restituito il</th></tr>${past.map(row).join('')}</table>` : '<p class="note">Nessun prestito concluso.</p>'}`;
+}
+
+function renderColls(){
+  const wrap = document.getElementById('coll-list');
+  if(!colls.length){ wrap.innerHTML = '<div class="empty">Nessuna collocazione. Aggiungine una qui sopra (es. "Soggiorno · Libreria grande · Ripiano 3").</div>'; return; }
+  wrap.innerHTML = `<table><tr><th>Collocazione</th><th>Libri</th><th></th></tr>` + colls.map(c=>{
+    const n = books.filter(b=>(b.fields['Collocazione']||[]).includes(c.id)).length;
+    return `<tr><td><b>${esc(c.fields['Nome']||'')}</b></td><td>${n}</td>
+    <td>${n===0?`<button class="btn small danger" onclick="delCollocazione('${c.id}')">Elimina</button>`:''}</td></tr>`;
+  }).join('')+`</table>`;
+}
+
+/* ================== DETTAGLIO LIBRO ================== */
+function openDetail(id){
+  const b = bookById(id); if(!b) return;
+  const f = b.fields; const loan = activeLoanFor(id);
+  const kv = [];
+  if(f['Editore']) kv.push(['Editore', f['Editore']]);
+  if(f['Anno']) kv.push(['Anno', f['Anno']]);
+  if(f['ISBN']) kv.push(['ISBN', f['ISBN']]);
+  if(f['Pagine']) kv.push(['Pagine', f['Pagine']]);
+  if(f['Lingua']) kv.push(['Lingua', f['Lingua']]);
+  if((f['Genere']||[]).length) kv.push(['Genere', f['Genere'].join(', ')]);
+  if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
+  if(f['Data inizio lettura']) kv.push(['Inizio lettura', fmtDate(f['Data inizio lettura'])]);
+  if(f['Data fine lettura']) kv.push(['Fine lettura', fmtDate(f['Data fine lettura'])]);
+  if(f['Prezzo']!=null) kv.push(['Prezzo', '€ '+f['Prezzo']]);
+  const isWish = f['Possesso']==='Desiderato';
+  modal(`
+    <div class="detail">
+      <div class="cover">${f['Copertina']?`<img src="${esc(f['Copertina'])}" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
+      <div class="meta">
+        <h2>${esc(f['Titolo']||'')}</h2>
+        <div class="auth">${esc(f['Autore']||'')}</div>
+        <div style="margin-bottom:12px">
+          ${f['Stato']?`<span class="pill" style="background:${STATO_COLORS[f['Stato']]}">${esc(f['Stato'])}</span> `:''}
+          ${isWish?`<span class="pill" style="background:var(--accent)">Lista desideri</span> `:''}
+          ${loan?`<span class="pill" style="background:var(--red)">Prestato a ${esc(loan.fields['Prestato a']||'?')}</span>`:''}
+          ${f['Valutazione']?`<span class="stars" style="font-size:15px">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</span>`:''}
+        </div>
+        <dl class="kv">${kv.map(([k,v])=>`<dt>${k}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
+        ${f['Note']?`<p class="note" style="white-space:pre-wrap">${esc(f['Note'])}</p>`:''}
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger small left" onclick="delBook('${id}')">Elimina</button>
+      ${isWish?`<button class="btn" onclick="markPurchased('${id}')">🛒 Acquistato!</button>`:''}
+      ${!isWish && !loan?`<button class="btn secondary" onclick="openLoanForm('${id}')">🤝 Presta</button>`:''}
+      ${loan?`<button class="btn secondary" onclick="returnLoan('${loan.id}')">✓ Segna restituito</button>`:''}
+      <button class="btn secondary" onclick="openBookForm('${id}')">✏️ Modifica</button>
+      <button class="btn" onclick="closeModal()">Chiudi</button>
+    </div>`);
+}
+
+/* ================== FORM LIBRO ================== */
+function openBookForm(id, prefill){
+  const b = id ? bookById(id) : null;
+  const f = b ? b.fields : (prefill||{});
+  const opt = (list, sel) => list.map(x=>`<option ${x===sel?'selected':''}>${x}</option>`).join('');
+  modal(`
+    <h2>${b?'Modifica libro':'Nuovo libro'}</h2>
+    <div class="frow">
+      <div class="field" style="grid-column:1/-1"><label>Titolo *</label><input id="bf-titolo" value="${escAttr(f['Titolo']||'')}"></div>
+      <div class="field"><label>Autore</label><input id="bf-autore" value="${escAttr(f['Autore']||'')}"></div>
+      <div class="field"><label>ISBN</label><input id="bf-isbn" value="${escAttr(f['ISBN']||'')}"></div>
+      <div class="field"><label>Editore</label><input id="bf-editore" value="${escAttr(f['Editore']||'')}"></div>
+      <div class="field"><label>Anno</label><input id="bf-anno" type="number" value="${f['Anno']||''}"></div>
+      <div class="field"><label>Pagine</label><input id="bf-pagine" type="number" value="${f['Pagine']||''}"></div>
+      <div class="field"><label>Lingua</label><select id="bf-lingua"><option value=""></option>${opt(['Italiano','Inglese','Francese','Tedesco','Spagnolo','Altro'], f['Lingua'])}</select></div>
+      <div class="field"><label>Genere</label><select id="bf-genere" multiple size="4">${GENERI.map(g=>`<option ${(f['Genere']||[]).includes(g)?'selected':''}>${g}</option>`).join('')}</select></div>
+      <div class="field"><label>Possesso</label><select id="bf-possesso">${opt(['Posseduto','Desiderato'], f['Possesso']||'Posseduto')}</select>
+        <label style="margin-top:8px">Stato lettura</label><select id="bf-stato"><option value=""></option>${opt(['Da leggere','In lettura','Letto','Abbandonato'], f['Stato'])}</select></div>
+      <div class="field"><label>Collocazione</label><select id="bf-coll"><option value=""></option>${colls.map(c=>`<option value="${c.id}" ${(f['Collocazione']||[]).includes(c.id)?'selected':''}>${esc(c.fields['Nome']||'')}</option>`).join('')}</select>
+        <label style="margin-top:8px">Valutazione (0–5)</label><input id="bf-val" type="number" min="0" max="5" value="${f['Valutazione']||''}"></div>
+      <div class="field"><label>Data inizio lettura</label><input id="bf-din" type="date" value="${f['Data inizio lettura']||''}"></div>
+      <div class="field"><label>Data fine lettura</label><input id="bf-dfi" type="date" value="${f['Data fine lettura']||''}"></div>
+      <div class="field"><label>Prezzo (€, per wishlist)</label><input id="bf-prezzo" type="number" step="0.01" value="${f['Prezzo']??''}"></div>
+      <div class="field"><label>Copertina (URL)</label><input id="bf-cop" value="${escAttr(f['Copertina']||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="bf-note">${esc(f['Note']||'')}</textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="saveBook(${b?`'${id}'`:'null'})">💾 Salva</button>
+    </div>`);
+}
+
+async function saveBook(id){
+  const v = x => document.getElementById(x).value.trim();
+  const titolo = v('bf-titolo');
+  if(!titolo){ toast('Il titolo è obbligatorio'); return; }
+  const genere = [...document.getElementById('bf-genere').selectedOptions].map(o=>o.value);
+  const collSel = v('bf-coll');
+  const fields = {
+    'Titolo':titolo, 'Autore':v('bf-autore'), 'ISBN':v('bf-isbn'), 'Editore':v('bf-editore'),
+    'Anno': v('bf-anno')?Number(v('bf-anno')):null, 'Pagine': v('bf-pagine')?Number(v('bf-pagine')):null,
+    'Lingua': v('bf-lingua')||null, 'Genere': genere, 'Possesso': v('bf-possesso'),
+    'Stato': v('bf-stato')||null, 'Collocazione': collSel?[collSel]:[],
+    'Valutazione': v('bf-val')?Number(v('bf-val')):null,
+    'Data inizio lettura': v('bf-din')||null, 'Data fine lettura': v('bf-dfi')||null,
+    'Prezzo': v('bf-prezzo')?Number(v('bf-prezzo')):null,
+    'Copertina': v('bf-cop'), 'Note': document.getElementById('bf-note').value
+  };
+  try{
+    if(id){ const j = await updateRec(TBL.libri, id, fields); const i = books.findIndex(b=>b.id===id); books[i]=j; }
+    else{ const j = await createRec(TBL.libri, fields); books.push(j.records[0]); }
+    closeModal(); fillFilters(); renderAll(); toast('📗 Libro salvato');
+  }catch(e){ toast(e.message); }
+}
+
+async function delBook(id){
+  if(!confirm('Eliminare definitivamente questo libro?')) return;
+  try{ await deleteRec(TBL.libri, id); books = books.filter(b=>b.id!==id); closeModal(); renderAll(); toast('Libro eliminato'); }
+  catch(e){ toast(e.message); }
+}
+async function markPurchased(id){
+  try{ const j = await updateRec(TBL.libri, id, {'Possesso':'Posseduto','Stato':'Da leggere'});
+    const i = books.findIndex(b=>b.id===id); books[i]=j; closeModal(); renderAll(); toast('🎉 Aggiunto alla biblioteca!');
+  }catch(e){ toast(e.message); }
+}
+
+/* ================== ISBN LOOKUP ================== */
+async function lookupISBN(){
+  const raw = document.getElementById('isbn-input').value.replace(/[^0-9Xx]/g,'');
+  const st = document.getElementById('isbn-status');
+  if(raw.length<10){ st.textContent = 'Inserisci un ISBN valido (10 o 13 cifre).'; return; }
+  st.textContent = 'Cerco…'; document.getElementById('isbn-btn').disabled = true;
+  let data = null;
+  try{
+    const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}`).then(r=>r.json());
+    if(g.totalItems>0){
+      const vi = g.items[0].volumeInfo;
+      data = { 'Titolo':vi.title + (vi.subtitle?'. '+vi.subtitle:''), 'Autore':(vi.authors||[]).join(', '),
+        'Editore':vi.publisher||'', 'Anno': vi.publishedDate?Number(vi.publishedDate.slice(0,4)):null,
+        'Pagine': vi.pageCount||null, 'ISBN':raw,
+        'Copertina': vi.imageLinks ? (vi.imageLinks.thumbnail||vi.imageLinks.smallThumbnail||'').replace('http://','https://') : '',
+        'Lingua': vi.language==='it'?'Italiano':vi.language==='en'?'Inglese':vi.language==='fr'?'Francese':vi.language==='de'?'Tedesco':vi.language==='es'?'Spagnolo':'' };
+    }
+  }catch(e){}
+  if(!data){
+    try{
+      const o = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${raw}&format=json&jscmd=data`).then(r=>r.json());
+      const d = o['ISBN:'+raw];
+      if(d) data = { 'Titolo':d.title||'', 'Autore':(d.authors||[]).map(a=>a.name).join(', '),
+        'Editore':(d.publishers||[]).map(p=>p.name).join(', '),
+        'Anno': d.publish_date?Number((d.publish_date.match(/\d{4}/)||[null])[0]):null,
+        'Pagine': d.number_of_pages||null, 'ISBN':raw,
+        'Copertina': d.cover ? (d.cover.large||d.cover.medium||d.cover.small||'') : '' };
+    }catch(e){}
+  }
+  document.getElementById('isbn-btn').disabled = false;
+  if(data){ st.textContent=''; openBookForm(null, data); }
+  else st.textContent = '❌ Nessun risultato per questo ISBN. Prova con l\'inserimento manuale.';
+}
+
+/* ================== IMPORT CSV ================== */
+function parseCSV(text){
+  const sep = (text.split('\n')[0].match(/;/g)||[]).length > (text.split('\n')[0].match(/,/g)||[]).length ? ';' : ',';
+  const rows = []; let row=[], cell='', inQ=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQ){ if(ch==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else inQ=false; } else cell+=ch; }
+    else if(ch==='"') inQ=true;
+    else if(ch===sep){ row.push(cell); cell=''; }
+    else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n')i++; row.push(cell); cell=''; if(row.some(c=>c.trim()!=='')) rows.push(row); row=[]; }
+    else cell+=ch;
+  }
+  if(cell!==''||row.length){ row.push(cell); if(row.some(c=>c.trim()!=='')) rows.push(row); }
+  return rows;
+}
+async function importCSV(){
+  const file = document.getElementById('csv-file').files[0];
+  const st = document.getElementById('csv-status');
+  if(!file){ st.textContent='Seleziona prima un file CSV.'; return; }
+  const text = await file.text();
+  const rows = parseCSV(text);
+  if(rows.length<2){ st.textContent='File vuoto o senza righe di dati.'; return; }
+  const head = rows[0].map(h=>h.trim().toLowerCase());
+  const col = name => head.findIndex(h=>h===name);
+  const map = { titolo:col('titolo'), autore:col('autore'), isbn:col('isbn'), editore:col('editore'),
+    anno:col('anno'), genere:col('genere'), stato:col('stato'), pagine:col('pagine'), lingua:col('lingua'), note:col('note') };
+  if(map.titolo<0){ st.textContent='❌ Colonna "Titolo" non trovata nelle intestazioni.'; return; }
+  const recs = rows.slice(1).filter(r=>r[map.titolo] && r[map.titolo].trim()).map(r=>{
+    const g = x => map[x]>=0 ? (r[map[x]]||'').trim() : '';
+    const fields = { 'Titolo':g('titolo'), 'Autore':g('autore'), 'ISBN':g('isbn'), 'Editore':g('editore'), 'Note':g('note') };
+    if(g('anno') && !isNaN(Number(g('anno')))) fields['Anno']=Number(g('anno'));
+    if(g('pagine') && !isNaN(Number(g('pagine')))) fields['Pagine']=Number(g('pagine'));
+    if(g('stato')) fields['Stato']=g('stato');
+    if(g('lingua')) fields['Lingua']=g('lingua');
+    if(g('genere')) fields['Genere']=g('genere').split(/[,;|]/).map(x=>x.trim()).filter(Boolean);
+    return {fields};
+  });
+  st.textContent = `Importo ${recs.length} libri…`;
+  let done=0;
+  try{
+    for(let i=0;i<recs.length;i+=10){
+      const j = await createMany(TBL.libri, recs.slice(i,i+10));
+      books = books.concat(j.records); done += j.records.length;
+      st.textContent = `Importati ${done}/${recs.length}…`;
+      await new Promise(r=>setTimeout(r,250));
+    }
+    st.textContent = `✅ Importati ${done} libri!`;
+    fillFilters(); renderAll();
+  }catch(e){ st.textContent = `⚠️ Importati ${done}/${recs.length}. Errore: ${e.message}`; }
+}
+
+/* ================== PRESTITI ================== */
+function openLoanForm(bookId){
+  const b = bookById(bookId);
+  const today = new Date().toISOString().slice(0,10);
+  const in30 = new Date(Date.now()+30*864e5).toISOString().slice(0,10);
+  modal(`
+    <h2>Presta “${esc(b.fields['Titolo']||'')}”</h2>
+    <div class="frow">
+      <div class="field"><label>Prestato a *</label><input id="lf-a"></div>
+      <div class="field"><label>Contatto (tel/email)</label><input id="lf-c"></div>
+      <div class="field"><label>Data prestito</label><input id="lf-d" type="date" value="${today}"></div>
+      <div class="field"><label>Restituzione prevista</label><input id="lf-r" type="date" value="${in30}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Note</label><input id="lf-n"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="saveLoan('${bookId}')">🤝 Registra prestito</button>
+    </div>`);
+}
+async function saveLoan(bookId){
+  const v = x=>document.getElementById(x).value.trim();
+  if(!v('lf-a')){ toast('Indica a chi presti il libro'); return; }
+  const b = bookById(bookId);
+  try{
+    const j = await createRec(TBL.prestiti, {
+      'Prestito': `${b.fields['Titolo']||'Libro'} → ${v('lf-a')}`,
+      'Libro':[bookId], 'Prestato a':v('lf-a'), 'Contatto':v('lf-c'),
+      'Data prestito':v('lf-d')||null, 'Restituzione prevista':v('lf-r')||null,
+      'Stato':'In corso', 'Note':v('lf-n') });
+    loans.push(j.records[0]); closeModal(); renderAll(); toast('🤝 Prestito registrato');
+  }catch(e){ toast(e.message); }
+}
+async function returnLoan(loanId){
+  try{
+    const j = await updateRec(TBL.prestiti, loanId, {'Stato':'Restituito','Data restituzione': new Date().toISOString().slice(0,10)});
+    const i = loans.findIndex(l=>l.id===loanId); loans[i]=j; closeModal(); renderAll(); toast('✓ Libro rientrato');
+  }catch(e){ toast(e.message); }
+}
+
+/* ================== COLLOCAZIONI ================== */
+async function addCollocazione(){
+  const inp = document.getElementById('new-coll');
+  const name = inp.value.trim();
+  if(!name){ toast('Scrivi il nome della collocazione'); return; }
+  try{ const j = await createRec(TBL.coll, {'Nome':name}); colls.push(j.records[0]); inp.value=''; fillFilters(); renderColls(); toast('Collocazione aggiunta'); }
+  catch(e){ toast(e.message); }
+}
+async function delCollocazione(id){
+  if(!confirm('Eliminare questa collocazione?')) return;
+  try{ await deleteRec(TBL.coll, id); colls = colls.filter(c=>c.id!==id); fillFilters(); renderColls(); }
+  catch(e){ toast(e.message); }
+}
+
+/* ================== UTILS ================== */
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s){ return esc(s); }
+function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
+function modal(html){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+let toastTimer;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500); }
+
+/* ================== AVVIO ================== */
+if(cfg().token && cfg().base){ show('catalogo'); } else { show('impostazioni'); }
+</script>
+</body>
+</html>
