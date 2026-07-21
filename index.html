@@ -181,12 +181,13 @@
       <p class="note" id="isbn-status"></p>
       <hr style="border:none; border-top:1px solid var(--line); margin:18px 0">
       <h3 style="margin-bottom:8px">Scansioni delle copertine</h3>
-      <p class="note" style="margin-bottom:10px">Trascina qui le scansioni dei tuoi libri, anche molte insieme.
+      <p class="note" style="margin-bottom:10px">Trascina qui le scansioni dei tuoi libri, anche molte insieme: <b>immagini o PDF</b>
+      (dei PDF elaboro ogni pagina, nell'ordine).
       Dal <b>retro</b> leggo il codice a barre (ISBN) e recupero tutti i dati; il <b>fronte</b> diventa la copertina nel catalogo.
-      <b>L'ordine dei file conta</b>: per ogni libro, prima il fronte poi il retro (es. <i>scan001</i>=fronte, <i>scan002</i>=retro).
+      <b>L'ordine conta</b>: per ogni libro, prima il fronte poi il retro (es. <i>scan001</i>=fronte, <i>scan002</i>=retro, oppure pagina 1=fronte e pagina 2=retro nello stesso PDF).
       Se c'è solo il fronte, provo a riconoscere il titolo con l'OCR.</p>
-      <div class="dropzone" id="dropzone">📥 <b>Trascina qui le scansioni</b><br>oppure clicca per scegliere i file</div>
-      <input type="file" id="scan-files" accept="image/*" multiple style="display:none">
+      <div class="dropzone" id="dropzone">📥 <b>Trascina qui le scansioni</b> (immagini o PDF)<br>oppure clicca per scegliere i file</div>
+      <input type="file" id="scan-files" accept="image/*,.pdf,application/pdf" multiple style="display:none">
       <div class="scanlog" id="scan-log"></div>
       <hr style="border:none; border-top:1px solid var(--line); margin:18px 0">
       <h3 style="margin-bottom:8px">Importa da file CSV</h3>
@@ -348,7 +349,8 @@ function renderCatalog(){
   const fc = document.getElementById('f-coll').value;
   const sort = document.getElementById('f-sort').value;
   let list = books.filter(b => (b.fields['Possesso']||'Posseduto')!=='Desiderato');
-  if(q)  list = list.filter(b => ['Titolo','Autore','ISBN','Editore'].some(f => String(b.fields[f]||'').toLowerCase().includes(q)));
+  if(q)  list = list.filter(b => ['Titolo','Autore','ISBN','Editore','Descrizione'].some(f => String(b.fields[f]||'').toLowerCase().includes(q))
+                             || (b.fields['Tag']||[]).some(t => String(t).toLowerCase().includes(q)));
   if(fs) list = list.filter(b => b.fields['Stato']===fs);
   if(fg) list = list.filter(b => (b.fields['Genere']||[]).includes(fg));
   if(fc) list = list.filter(b => (b.fields['Collocazione']||[]).includes(fc));
@@ -441,6 +443,8 @@ function openDetail(id){
           ${f['Valutazione']?`<span class="stars" style="font-size:15px">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</span>`:''}
         </div>
         <dl class="kv">${kv.map(([k,v])=>`<dt>${k}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
+        ${(f['Tag']||[]).length?`<div style="margin-bottom:10px">${f['Tag'].map(t=>`<span class="pill" style="background:var(--muted); margin:0 4px 4px 0">${esc(t)}</span>`).join('')}</div>`:''}
+        ${f['Descrizione']?`<p class="note" style="white-space:pre-wrap; max-height:180px; overflow-y:auto; margin-bottom:8px">${esc(f['Descrizione'])}</p>`:''}
         ${f['Note']?`<p class="note" style="white-space:pre-wrap">${esc(f['Note'])}</p>`:''}
         ${(f['Scansioni']||[]).length?`<p class="note" style="margin-top:8px">📎 Scansioni: ${(f['Scansioni']||[]).map((a,i)=>`<a href="${esc(a.url)}" target="_blank">${i===0?'fronte':(i===1?'retro':'altra '+i)}</a>`).join(' · ')}</p>`:''}
       </div>
@@ -479,6 +483,8 @@ function openBookForm(id, prefill){
       <div class="field"><label>Data fine lettura</label><input id="bf-dfi" type="date" value="${f['Data fine lettura']||''}"></div>
       <div class="field"><label>Prezzo (€, per wishlist)</label><input id="bf-prezzo" type="number" step="0.01" value="${f['Prezzo']??''}"></div>
       <div class="field"><label>Copertina (URL)</label><input id="bf-cop" value="${escAttr(f['Copertina']||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Tag (separati da virgola)</label><input id="bf-tag" value="${escAttr((f['Tag']||[]).join(', '))}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Descrizione / abstract</label><textarea id="bf-desc" style="min-height:100px">${esc(f['Descrizione']||'')}</textarea></div>
       <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="bf-note">${esc(f['Note']||'')}</textarea></div>
     </div>
     <div class="modal-actions">
@@ -501,7 +507,10 @@ async function saveBook(id){
     'Valutazione': v('bf-val')?Number(v('bf-val')):null,
     'Data inizio lettura': v('bf-din')||null, 'Data fine lettura': v('bf-dfi')||null,
     'Prezzo': v('bf-prezzo')?Number(v('bf-prezzo')):null,
-    'Copertina': v('bf-cop'), 'Note': document.getElementById('bf-note').value
+    'Copertina': v('bf-cop'),
+    'Tag': v('bf-tag').split(',').map(x=>x.trim()).filter(Boolean),
+    'Descrizione': document.getElementById('bf-desc').value,
+    'Note': document.getElementById('bf-note').value
   };
   try{
     if(id){ const j = await updateRec(TBL.libri, id, fields); const i = books.findIndex(b=>b.id===id); books[i]=j; }
@@ -521,29 +530,62 @@ async function markPurchased(id){
   }catch(e){ toast(e.message); }
 }
 
-/* ================== ISBN LOOKUP ================== */
+/* ================== ISBN LOOKUP + ARRICCHIMENTO WEB ================== */
+function cleanTags(arr){
+  const seen = new Set(); const out = [];
+  for(let t of (arr||[]).flatMap(x=>String(x||'').split('/'))){
+    t = t.trim().replace(/\s+/g,' ');
+    if(t.length<2 || t.length>40) continue;
+    const k = t.toLowerCase();
+    if(seen.has(k)) continue;
+    seen.add(k); out.push(t);
+    if(out.length>=10) break;
+  }
+  return out;
+}
 function volumeToFields(vi, isbn){
   return { 'Titolo':(vi.title||'') + (vi.subtitle?'. '+vi.subtitle:''), 'Autore':(vi.authors||[]).join(', '),
     'Editore':vi.publisher||'', 'Anno': vi.publishedDate?Number(vi.publishedDate.slice(0,4)):null,
     'Pagine': vi.pageCount||null, 'ISBN':isbn||'',
     'Copertina': vi.imageLinks ? (vi.imageLinks.thumbnail||vi.imageLinks.smallThumbnail||'').replace('http://','https://') : '',
+    'Descrizione': (vi.description||'').trim(),
+    'Tag': cleanTags((vi.categories||[]).flatMap(c=>String(c).split('/'))),
     'Lingua': vi.language==='it'?'Italiano':vi.language==='en'?'Inglese':vi.language==='fr'?'Francese':vi.language==='de'?'Tedesco':vi.language==='es'?'Spagnolo':'' };
 }
+/* cerca su Google Books e integra con Open Library (editore, pagine, copertina, argomenti, descrizione) */
 async function fetchBookByISBN(raw){
+  let data = null;
   try{
     const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}`).then(r=>r.json());
-    if(g.totalItems>0) return volumeToFields(g.items[0].volumeInfo, raw);
+    if(g.totalItems>0) data = volumeToFields(g.items[0].volumeInfo, raw);
   }catch(e){}
   try{
     const o = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${raw}&format=json&jscmd=data`).then(r=>r.json());
     const d = o['ISBN:'+raw];
-    if(d) return { 'Titolo':d.title||'', 'Autore':(d.authors||[]).map(a=>a.name).join(', '),
-      'Editore':(d.publishers||[]).map(p=>p.name).join(', '),
-      'Anno': d.publish_date?Number((d.publish_date.match(/\d{4}/)||[null])[0]):null,
-      'Pagine': d.number_of_pages||null, 'ISBN':raw,
-      'Copertina': d.cover ? (d.cover.large||d.cover.medium||d.cover.small||'') : '' };
+    if(d){
+      if(!data) data = { 'Titolo':d.title||'', 'ISBN':raw, 'Tag':[] };
+      if(!data['Autore'] && d.authors) data['Autore'] = d.authors.map(a=>a.name).join(', ');
+      if(!data['Editore'] && d.publishers) data['Editore'] = d.publishers.map(p=>p.name).join(', ');
+      if(!data['Anno'] && d.publish_date) data['Anno'] = Number((d.publish_date.match(/\d{4}/)||[null])[0]);
+      if(!data['Pagine'] && d.number_of_pages) data['Pagine'] = d.number_of_pages;
+      if(!data['Copertina'] && d.cover) data['Copertina'] = d.cover.large||d.cover.medium||d.cover.small||'';
+      data['Tag'] = cleanTags([...(data['Tag']||[]), ...((d.subjects||[]).map(s=>s.name||s))]);
+    }
   }catch(e){}
-  return null;
+  // descrizione da Open Library (scheda "opera") se Google non la fornisce
+  if(data && !data['Descrizione']){
+    try{
+      const ed = await fetch(`https://openlibrary.org/isbn/${raw}.json`).then(r=>r.json());
+      const wk = ed && ed.works && ed.works[0] && ed.works[0].key;
+      if(wk){
+        const w = await fetch(`https://openlibrary.org${wk}.json`).then(r=>r.json());
+        const desc = typeof w.description==='string' ? w.description : (w.description && w.description.value) || '';
+        if(desc) data['Descrizione'] = desc.trim();
+        if(w.subjects) data['Tag'] = cleanTags([...(data['Tag']||[]), ...w.subjects]);
+      }
+    }catch(e){}
+  }
+  return data;
 }
 async function lookupISBN(){
   const raw = document.getElementById('isbn-input').value.replace(/[^0-9Xx]/g,'');
@@ -559,7 +601,9 @@ async function lookupISBN(){
 /* ================== SCANSIONE COPERTINE (batch) ================== */
 const CDN = {
   zxing: 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js',
-  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+  pdfjs: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+  pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
 };
 const loadedScripts = {};
 function loadScript(src){
@@ -588,6 +632,26 @@ function rotateCanvas(c, deg){
   ctx.translate(r.width/2, r.height/2); ctx.rotate(deg*Math.PI/180);
   ctx.drawImage(c, -c.width/2, -c.height/2);
   return r;
+}
+function isPDF(file){ return file.type==='application/pdf' || /\.pdf$/i.test(file.name); }
+/* converte ogni pagina di un PDF in un canvas */
+async function pdfToCanvases(file){
+  await loadScript(CDN.pdfjs);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = CDN.pdfjsWorker;
+  const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
+  const out = [];
+  const base = file.name.replace(/\.pdf$/i,'');
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    let vp = page.getViewport({scale:1});
+    const scale = Math.min(4, 1800/Math.max(vp.width, vp.height));
+    vp = page.getViewport({scale});
+    const c = document.createElement('canvas');
+    c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    await page.render({canvasContext: c.getContext('2d'), viewport: vp}).promise;
+    out.push({ name: pdf.numPages>1 ? `${base} (pag. ${p})` : base, canvas: c });
+  }
+  return out;
 }
 function isbnFromCode(txt){
   const d = String(txt||'').replace(/[^0-9]/g,'');
@@ -624,14 +688,18 @@ async function decodeBarcode(canvas){
   return null;
 }
 
-/* OCR del fronte → ricerca su Google Books per titolo */
-async function ocrLookup(canvas){
+/* OCR generico di un canvas → righe di testo pulite */
+async function ocrLines(canvas){
   await loadScript(CDN.tesseract);
   const { data } = await Tesseract.recognize(canvas, 'ita+eng');
-  const lines = (data.text||'').split('\n').map(l=>l.trim().replace(/[|_~`^]/g,''))
+  return (data.text||'').split('\n').map(l=>l.trim().replace(/[|_~`^]/g,''))
     .filter(l => l.length>3 && /[a-zA-Zàèéìòù]/.test(l));
+}
+/* OCR del fronte → ricerca su Google Books per titolo */
+async function ocrLookup(canvas){
+  const lines = await ocrLines(canvas);
   if(!lines.length) return null;
-  const query = lines.sort((a,b)=>b.length-a.length).slice(0,3).join(' ').slice(0,120);
+  const query = [...lines].sort((a,b)=>b.length-a.length).slice(0,3).join(' ').slice(0,120);
   try{
     const g = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=1`).then(r=>r.json());
     if(g.totalItems>0){
@@ -643,6 +711,17 @@ async function ocrLookup(canvas){
   }catch(e){}
   return null;
 }
+/* OCR della quarta di copertina → testo dell'abstract (fallback se il web non fornisce la descrizione) */
+async function ocrBlurb(canvas){
+  const lines = await ocrLines(canvas);
+  // scarta righe troppo "sporche" (barcode, prezzi, URL, codici)
+  const good = lines.filter(l => {
+    const letters = (l.match(/[a-zA-Zàèéìòùáéíóú ]/g)||[]).length;
+    return letters/l.length > 0.7 && !/www\.|http|ISBN|€|\d{5,}/i.test(l);
+  });
+  const txt = good.join(' ').replace(/\s+/g,' ').trim();
+  return txt.length>=120 ? txt.slice(0,1500) : '';
+}
 
 /* upload di una scansione come allegato Airtable (campo "Scansioni") */
 async function uploadScan(recordId, canvas, filename){
@@ -651,7 +730,7 @@ async function uploadScan(recordId, canvas, filename){
   const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent('Scansioni')}/uploadAttachment`,{
     method:'POST',
     headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ contentType:'image/jpeg', file: base64, filename: (filename||'scan').replace(/\.[^.]+$/,'')+'.jpg' })
+    body: JSON.stringify({ contentType:'image/jpeg', file: base64, filename: (filename||'scan').replace(/\.(jpe?g|png|gif|webp|tiff?|bmp|heic|pdf)$/i,'')+'.jpg' })
   });
   if(!res.ok){ let m='Upload scansione fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
   return res.json();
@@ -663,21 +742,25 @@ function slog(html, cls){ const d=document.createElement('div'); if(cls)d.classN
 async function processScans(fileList){
   const {token} = cfg();
   if(!token){ toast('Configura prima il token nelle Impostazioni'); show('impostazioni'); return; }
-  const files = [...fileList].filter(f=>f.type.startsWith('image/'))
+  const files = [...fileList].filter(f=>f.type.startsWith('image/') || isPDF(f))
     .sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
-  if(!files.length){ toast('Nessuna immagine tra i file trascinati'); return; }
+  if(!files.length){ toast('Nessuna immagine o PDF tra i file trascinati'); return; }
   scanLogEl().innerHTML='';
-  slog(`🔎 Analizzo ${files.length} scansion${files.length===1?'e':'i'}…`);
+  slog(`🔎 Analizzo ${files.length} file…`);
 
-  // 1. decodifica barcode per ogni immagine
+  // 1. espandi (i PDF in pagine) e decodifica il barcode di ogni scansione
   const items = [];
   for(const file of files){
-    let canvas;
-    try{ canvas = await fileToCanvas(file, 1800); }
-    catch(e){ slog(`❌ ${esc(file.name)}: immagine non leggibile`, 'err'); continue; }
-    const isbn = await decodeBarcode(canvas);
-    items.push({file, canvas, isbn});
-    slog(isbn ? `📕 ${esc(file.name)}: codice a barre → ISBN <b>${isbn}</b> (retro)` : `🖼️ ${esc(file.name)}: nessun barcode (fronte)`);
+    let entries = [];
+    try{
+      if(isPDF(file)) entries = await pdfToCanvases(file);
+      else entries = [{ name: file.name, canvas: await fileToCanvas(file, 1800) }];
+    }catch(e){ slog(`❌ ${esc(file.name)}: file non leggibile (${esc(e.message||'')})`, 'err'); continue; }
+    for(const en of entries){
+      const isbn = await decodeBarcode(en.canvas);
+      items.push({name: en.name, canvas: en.canvas, isbn});
+      slog(isbn ? `📕 ${esc(en.name)}: codice a barre → ISBN <b>${isbn}</b> (retro)` : `🖼️ ${esc(en.name)}: nessun barcode (fronte)`);
+    }
   }
 
   // 2. abbina fronte (senza barcode) + retro (con barcode) in ordine di file
@@ -693,10 +776,18 @@ async function processScans(fileList){
   const known = new Set(books.map(b=>String(b.fields['ISBN']||'').replace(/[^0-9Xx]/g,'')).filter(Boolean));
   for(const p of pairs){
     let data=null, viaOCR=false;
-    const label = p.back ? p.back.file.name : p.front.file.name;
+    const label = p.back ? p.back.name : p.front.name;
     if(p.isbn){
       if(known.has(p.isbn)){ slog(`⏭️ ${esc(label)}: ISBN ${p.isbn} già in biblioteca, salto`, 'warn'); skipped++; continue; }
       data = await fetchBookByISBN(p.isbn) || {'Titolo':'Libro ISBN '+p.isbn, 'ISBN':p.isbn, 'Note':'⚠️ Dati non trovati online: completare a mano'};
+      // niente descrizione dal web? la estraggo con l'OCR dalla quarta di copertina
+      if(!data['Descrizione'] && p.back){
+        slog(`📝 ${esc(label)}: descrizione non trovata online, leggo la quarta di copertina (OCR)…`);
+        try{
+          const blurb = await ocrBlurb(p.back.canvas);
+          if(blurb) data['Descrizione'] = blurb + '\n\n[Testo estratto via OCR dalla quarta di copertina]';
+        }catch(e){}
+      }
     }else{
       slog(`🔤 ${esc(label)}: nessun barcode, provo l'OCR del fronte (può richiedere un po')…`);
       try{ data = await ocrLookup(p.front.canvas); }catch(e){ slog(`❌ OCR non disponibile: ${esc(e.message)}`, 'err'); }
@@ -713,8 +804,8 @@ async function processScans(fileList){
       if(data['ISBN']) known.add(String(data['ISBN']).replace(/[^0-9]/g,''));
       // 4. carica le scansioni (fronte per primo → diventa la copertina)
       for(const sc of [p.front, p.back].filter(Boolean)){
-        try{ const upd = await uploadScan(rec.id, sc.canvas, sc.file.name); if(upd && upd.fields) rec.fields = upd.fields; }
-        catch(e){ slog(`⚠️ ${esc(sc.file.name)}: ${esc(e.message)}`, 'warn'); }
+        try{ const upd = await uploadScan(rec.id, sc.canvas, sc.name); if(upd && upd.fields) rec.fields = upd.fields; }
+        catch(e){ slog(`⚠️ ${esc(sc.name)}: ${esc(e.message)}`, 'warn'); }
       }
       created++;
       slog(`✅ <b>${esc(rec.fields['Titolo']||data['Titolo'])}</b>${data['Autore']?' — '+esc(data['Autore']):''} aggiunto${viaOCR?' (via OCR, da verificare)':''}`, 'ok');
