@@ -95,6 +95,7 @@
   /* modal */
   .overlay{position:fixed; inset:0; background:rgba(40,30,15,.45); display:flex; align-items:flex-start; justify-content:center; padding:30px 15px; z-index:100; overflow-y:auto}
   .modal{background:var(--card); border-radius:16px; width:100%; max-width:680px; padding:26px; box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .modal.wide{max-width:940px}
   .modal h2{margin-bottom:18px; font-size:21px}
   .frow{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:12px}
   .field{display:flex; flex-direction:column; gap:5px}
@@ -769,20 +770,22 @@ function fmtCur(v){ return '€ ' + Number(v).toLocaleString('it-IT',{minimumFra
 function openObjDetail(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
   const f = o.fields;
-  const kv = [];
+  const kv = [], blocks = [];
   for(const fld of cat.campi){
-    if(fld.k==='Note' || fld.k==='Stato di conservazione') continue;   // note in fondo, stato come pill
-    let v = f[fld.k];
+    if(fld.k==='Stato di conservazione') continue;   // mostrato come pill
+    const v = f[fld.k];
     if(v===undefined || v===null || v==='') continue;
-    if(fld.t==='date') v = fmtDate(v);
-    else if(fld.t==='cur') v = fmtCur(v);
-    else if(fld.t==='num' && /cm$/.test(fld.k)) v = v + ' cm';
-    kv.push([fld.l, v]);
+    if(fld.t==='area'){ blocks.push([fld.l, v]); continue; }   // testi lunghi → sezioni a piena larghezza
+    let disp = v;
+    if(fld.t==='date') disp = fmtDate(v);
+    else if(fld.t==='cur') disp = fmtCur(v);
+    else if(fld.t==='num' && /cm$/.test(fld.k)) disp = v + ' cm';
+    kv.push([fld.l, disp]);
   }
   if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
   const cov = coverSrc(cat, f);
   const ar = fotoAR(cat, f);
-  const covStyle = ar ? ` style="aspect-ratio:${ar.toFixed(4)}; width:${ar>=1?'min(320px,100%)':'190px'}"` : '';
+  const covStyle = ar ? ` style="aspect-ratio:${ar.toFixed(4)}; ${ar>=1?'width:min(460px,52vw)':'height:min(56vh,540px)'}"` : '';
   const consBadge = f['Stato di conservazione']
     ? `<span class="pill" style="background:${CONS_COLORS[f['Stato di conservazione']]||'var(--muted)'}">${esc(f['Stato di conservazione'])}</span>` : '';
   modal(`
@@ -794,15 +797,93 @@ function openObjDetail(catKey, id){
         <div class="auth">${esc(f[cat.sub]||'')}</div>
         <div style="margin:8px 0 2px">${consBadge}</div>
         <dl class="kv">${kv.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
-        ${f['Note']?`<p class="note" style="white-space:pre-wrap; margin-top:6px">${esc(f['Note'])}</p>`:''}
       </div>
     </div>
+    ${blocks.length?`<div style="margin-top:10px">${blocks.map(([k,v])=>`<div class="seclabel">${esc(k)}</div><p class="note" style="white-space:pre-wrap; text-align:justify; margin-bottom:10px">${esc(String(v))}</p>`).join('')}</div>`:''}
     ${mediaSection(cat, o)}
     <div class="modal-actions">
       <button class="btn danger small left" onclick="delObj('${cat.key}','${id}')">Elimina</button>
+      <button class="btn secondary" onclick="stampaScheda('${cat.key}','${id}')">🖨 Stampa scheda (PDF)</button>
       <button class="btn secondary" onclick="openObjForm('${cat.key}','${id}')">✏️ Modifica</button>
       <button class="btn" onclick="closeModal()">Chiudi</button>
-    </div>`);
+    </div>`, true);
+}
+
+/* scheda stampabile in PDF (via finestra di stampa del browser), con timbro di proprietà */
+function stampaScheda(catKey, id){
+  const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
+  const f = o.fields;
+  const rows = [], blocks = [];
+  if(f['Stato di conservazione']) rows.push(['Stato di conservazione', f['Stato di conservazione']]);
+  for(const fld of cat.campi){
+    if(fld.k==='Stato di conservazione') continue;
+    const v = f[fld.k]; if(v===undefined || v===null || v==='') continue;
+    if(fld.t==='area'){ blocks.push([fld.l, v]); continue; }
+    let disp = v;
+    if(fld.t==='date') disp = fmtDate(v);
+    else if(fld.t==='cur') disp = fmtCur(v);
+    else if(fld.t==='num' && /cm$/.test(fld.k)) disp = v + ' cm';
+    rows.push([fld.l, disp]);
+  }
+  if((f['Collocazione']||[]).length) rows.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
+  const a = (f[cat.foto]||[])[0]; const pimg = a ? (a.url||'') : '';
+  const oggi = new Date().toLocaleDateString('it-IT', {day:'2-digit', month:'long', year:'numeric'});
+  const rowsHTML = rows.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join('');
+  const blocksHTML = blocks.map(([k,v])=>`<div class="blk"><div class="bl">${esc(k)}</div><div class="bt">${esc(String(v)).replace(/\n/g,'<br>')}</div></div>`).join('');
+  const html = `<!doctype html><html lang="it"><head><meta charset="utf-8">
+<title>${esc(codeStr(cat,f))} — ${esc(f['Titolo']||'')}</title>
+<style>
+  @page{ size:A4; margin:16mm }
+  *{box-sizing:border-box}
+  body{ font-family:Georgia,'Times New Roman',serif; color:#241f18; margin:0; font-size:11.5pt; line-height:1.5 }
+  .head{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #6f4a27; padding-bottom:6px; margin-bottom:14px }
+  .brand{ font-size:15pt; letter-spacing:3px; color:#6f4a27; text-transform:uppercase; font-weight:bold }
+  .brand small{ display:block; font-size:8pt; letter-spacing:2px; color:#8a7f70; font-weight:normal }
+  .code{ font-size:16pt; font-weight:bold; color:#6f4a27 }
+  h1{ font-size:20pt; margin:4px 0 2px }
+  .auth{ color:#6b6155; font-style:italic; margin-bottom:12px }
+  .row{ display:flex; gap:12mm; align-items:flex-start }
+  .photo{ flex:0 0 auto }
+  .photo img{ max-width:78mm; max-height:108mm; border:1px solid #ddd6c8 }
+  table{ border-collapse:collapse; width:100%; font-size:10.5pt }
+  th,td{ text-align:left; vertical-align:top; padding:3px 8px 3px 0; border-bottom:1px solid #eee5d6 }
+  th{ color:#8a7f70; font-weight:normal; width:44%; white-space:nowrap }
+  .blk{ margin-top:12px; break-inside:avoid }
+  .bl{ font-size:8.5pt; text-transform:uppercase; letter-spacing:1px; color:#8a7f70; border-bottom:1px solid #eee5d6; padding-bottom:2px; margin-bottom:4px }
+  .bt{ font-size:10.5pt; text-align:justify }
+  .foot{ display:flex; justify-content:space-between; align-items:flex-end; margin-top:24px }
+  .mf{ font-size:8.5pt; color:#8a7f70 }
+  .timbro{ width:33mm; height:33mm; border:2px solid #7a5230; border-radius:50%; color:#7a5230; transform:rotate(-7deg);
+    display:flex; align-items:center; justify-content:center; text-align:center; opacity:.85;
+    box-shadow:inset 0 0 0 2.5px #fff, inset 0 0 0 3.5px #7a5230 }
+  .timbro .t1{ font-size:6pt; letter-spacing:1.5px }
+  .timbro .t2{ font-size:11pt; font-weight:bold; line-height:1.05; letter-spacing:1px; margin:1px 0 }
+  .timbro .t3{ font-size:7.5pt; letter-spacing:2px }
+</style></head><body>
+  <div class="head">
+    <div class="brand">Catalogo Dajlani<small>Arezzo</small></div>
+    <div class="code">${esc(codeStr(cat,f))}</div>
+  </div>
+  <h1>${esc(f['Titolo']||'')}</h1>
+  <div class="auth">${esc(f[cat.sub]||'')}</div>
+  <div class="row">
+    ${pimg?`<div class="photo"><img src="${esc(pimg)}" id="pimg"></div>`:''}
+    <table>${rowsHTML}</table>
+  </div>
+  ${blocksHTML}
+  <div class="foot">
+    <div class="mf">Scheda generata il ${esc(oggi)}<br>Catalogo Dajlani Arezzo</div>
+    <div class="timbro"><div><div class="t1">✦ PROPRIETÀ ✦</div><div class="t2">IRMA<br>DAJLANI</div><div class="t3">AREZZO</div></div></div>
+  </div>
+  <script>
+    (function(){ var done=false; function go(){ if(done)return; done=true; try{window.focus();}catch(e){} window.print(); }
+      var im=document.getElementById('pimg');
+      if(im && !im.complete){ im.onload=go; im.onerror=go; setTimeout(go,2500); } else { setTimeout(go,300); } })();
+  <\/script>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ toast('Consenti i popup del browser per stampare la scheda'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 function openObjForm(catKey, id){
@@ -1655,7 +1736,7 @@ function fotoAR(cat, f){ const a=(f[cat.foto]||[])[0]; return (a && a.width && a
 function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
-function modal(html){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
+function modal(html, wide){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal${wide?' wide':''}">${html}</div></div>`; }
 function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
 let toastTimer;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500); }
