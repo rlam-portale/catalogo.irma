@@ -898,7 +898,17 @@ function mediaSection(cat, o){
 function lightbox(url){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${esc(url)}">`; document.body.appendChild(d); }
 function patchRec(catKey, id, rec){ const arr=objs[catKey]; const i=arr.findIndex(x=>x.id===id); if(i>=0) arr[i]=rec; }
 function patchFields(catKey, id, fields){ const o=objById(catKey,id); if(o) o.fields=fields; }
-function refreshDetail(catKey, id){ if(catKey==='libri') openBookDetail(id); else openObjDetail(catKey, id); renderCatalog(); renderTiles(); }
+/* ri-scarica il record da Airtable: la risposta dell'upload allegati non è affidabile
+   per aggiornare la vista (formato/miniature), quindi rileggo lo stato reale */
+async function ricaricaRecord(catKey, id){
+  const cat = catByKey(catKey);
+  try{ const j = await api(`${encodeURIComponent(cat.tbl)}/${id}`); patchRec(catKey, id, j); }catch(e){}
+}
+async function refreshDetail(catKey, id){
+  await ricaricaRecord(catKey, id);
+  if(catKey==='libri') openBookDetail(id); else openObjDetail(catKey, id);
+  renderCatalog(); renderTiles();
+}
 function pickFiles(accept, cb){
   const inp=document.createElement('input'); inp.type='file'; inp.accept=accept; inp.multiple=true;
   inp.onchange=()=>{ if(inp.files.length) cb([...inp.files]); };
@@ -910,7 +920,7 @@ async function aggiungiFoto(catKey, id){
     toast(`Carico ${files.length} foto…`);
     for(const file of files){
       try{ const c = await fileToCanvas(file, 1800); const upd = await uploadScan(id, c, file.name, cat.foto);
-        if(upd && upd.fields) patchFields(catKey, id, upd.fields);
+        void upd;  // la vista si aggiorna col re-fetch in refreshDetail, non dalla risposta upload
       }catch(e){ toast('Foto '+file.name+': '+e.message); }
     }
     refreshDetail(catKey, id); toast('📷 Fotografie aggiornate');
@@ -924,7 +934,7 @@ async function aggiungiDoc(catKey, id){
         let upd;
         if(isPDF(file)) upd = await uploadFile(id, 'Documenti', file);
         else { const c = await fileToCanvas(file, 2200); upd = await uploadScan(id, c, file.name, 'Documenti'); }
-        if(upd && upd.fields) patchFields(catKey, id, upd.fields);
+        void upd;  // la vista si aggiorna col re-fetch in refreshDetail, non dalla risposta upload
       }catch(e){ toast('Doc '+file.name+': '+e.message); }
     }
     refreshDetail(catKey, id); toast('📎 Documenti aggiornati');
