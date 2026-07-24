@@ -182,6 +182,8 @@
       L'ID base inizia con <code>app…</code> (lo trovi nell'URL della base). I dati restano nel tuo browser.</p>
       <div class="field"><label>Personal Access Token</label><input type="password" id="cfg-token" placeholder="pat…"></div>
       <div class="field"><label>ID Base</label><input type="text" id="cfg-base" placeholder="appXXXXXXXXXXXXXX"></div>
+      <div class="field"><label>Token Discogs (opzionale, per i supporti musicali)</label><input type="password" id="cfg-discogs" placeholder="token Discogs">
+        <p class="note" style="margin-top:4px">Migliora nettamente il riconoscimento di dischi e CD dal codice a barre. Crealo su <a href="https://www.discogs.com/settings/developers" target="_blank">discogs.com/settings/developers</a> → «Generate new token». Resta nel tuo browser.</p></div>
       <div style="display:flex; gap:10px; margin-top:6px">
         <button class="btn" onclick="saveConfig()">Salva e connetti</button>
         <button class="btn secondary" onclick="testConnection()">Prova connessione</button>
@@ -221,8 +223,14 @@
     </div>
     <div id="add-musica" class="setupbox hidden" style="margin-top:14px; max-width:680px">
       <h2>💿 Aggiungi supporto musicale</h2>
-      <p>Carica una foto della <b>copertina</b> (o del codice a barre): leggo i dati e li recupero da MusicBrainz, poi verifichi e salvi. Funziona meglio con il barcode (CD e vinili recenti) o con testo di copertina leggibile.</p>
-      <div class="dropzone" id="mus-dropzone">📷 <b>Trascina o scegli la foto della copertina</b><br>immagine o PDF</div>
+      <p>Recupero i dati dai database musicali (<b>Discogs</b> e <b>MusicBrainz</b>) partendo dal <b>codice a barre</b>. Puoi digitarlo qui sotto, oppure caricare una foto della copertina/retro e provo a leggerlo (con ripiego sull'OCR della copertina). Poi verifichi e salvi.</p>
+      <div class="isbnrow">
+        <input type="text" id="mus-barcode-input" placeholder="Codice a barre (EAN/UPC, es. 731451041129)" onkeydown="if(event.key==='Enter')cercaDaBarcode()">
+        <button class="btn" onclick="cercaDaBarcode()">🔍 Cerca da barcode</button>
+      </div>
+      <p class="note" id="mus-bc-status"></p>
+      <hr style="border:none; border-top:1px solid var(--line); margin:14px 0">
+      <div class="dropzone" id="mus-dropzone">📷 <b>Trascina o scegli la foto della copertina o del retro</b><br>immagine o PDF</div>
       <input type="file" id="mus-file" accept="image/*,.pdf,application/pdf" style="display:none">
       <p class="note" id="mus-status"></p>
       <hr style="border:none; border-top:1px solid var(--line); margin:16px 0">
@@ -523,6 +531,7 @@ function show(view){
   if(view==='impostazioni'){
     document.getElementById('cfg-token').value = cfg().token || '';
     document.getElementById('cfg-base').value  = cfg().base  || '';
+    document.getElementById('cfg-discogs').value = store('discogs_token') || '';
   }
   if(['catalogo','prestiti','wishlist','collocazioni'].includes(view)) loadAll();
   if(view==='aggiungi'){ loadAll(); renderAddChips(); setAddCat(addCat); }
@@ -534,6 +543,7 @@ function saveConfig(){
   const b = document.getElementById('cfg-base').value.trim();
   if(!t || !b){ toast('Inserisci token e ID base'); return; }
   store('bib_token', t); store('bib_base', b);
+  const dg = document.getElementById('cfg-discogs'); if(dg) store('discogs_token', dg.value.trim());
   testConnection(true);
 }
 async function testConnection(goCatalog){
@@ -1742,6 +1752,71 @@ function mbToFields(r, barcode){
     'Note': 'ℹ️ Dati recuperati da MusicBrainz: verifica edizione, anno e stato di conservazione.'
   };
 }
+/* --- Discogs: copertura migliore per i supporti fisici (token nelle Impostazioni) --- */
+function getDiscogsToken(){ return (store('discogs_token')||'').trim(); }
+function stripArtistN(s){ return (s||'').replace(/\s*\(\d+\)$/,'').trim(); }
+function mapFormatoDiscogs(formats){
+  const f = (formats&&formats[0])||{}; const name = (f.name||'').toLowerCase();
+  if(name.includes('vinyl')) return 'Vinile';
+  if(name.includes('cd')) return 'CD';
+  if(name.includes('cassette')) return 'Cassetta';
+  return '';
+}
+function discogsToFields(rel, bc){
+  const art = (rel.artists||[]).map(a=>stripArtistN(a.name)).filter(Boolean).join(', ');
+  const li = (rel.labels||[])[0]||{};
+  const gen = [...(rel.genres||[]), ...(rel.styles||[])];
+  const tracks = (rel.tracklist||[]).filter(t=>t.title && t.type_!=='heading')
+    .map(t=>(t.position? t.position+'. ':'')+t.title);
+  const bar = (rel.identifiers||[]).find(i=>(i.type||'').toLowerCase()==='barcode');
+  return {
+    'Titolo': rel.title||'',
+    'Artista': art,
+    'Tipologia supporto': mapFormatoDiscogs(rel.formats),
+    'Anno di rilascio': rel.year? String(rel.year):'',
+    'Genere musicale': gen.join(', '),
+    'Etichetta': li.name||'',
+    'Codice di catalogo': li.catno||'',
+    'Paese di stampa': PAESI[rel.country] || rel.country || '',
+    'Codice a barre': (bar&&bar.value)? bar.value.replace(/\s+/g,'') : (bc||''),
+    'Tracklist': tracks.join('\n'),
+    'Note': 'ℹ️ Dati recuperati da Discogs: verifica edizione, anno e stato di conservazione.'
+  };
+}
+async function discogsByBarcode(bc){
+  const token = getDiscogsToken(); if(!token) return null;
+  const s = await fetch('https://api.discogs.com/database/search?type=release&barcode='+encodeURIComponent(bc)+'&per_page=5&token='+encodeURIComponent(token));
+  if(!s.ok) return null;
+  const sj = await s.json();
+  const hit = (sj.results||[]).find(r=>r.id);
+  if(!hit) return null;
+  const d = await fetch('https://api.discogs.com/releases/'+hit.id+'?token='+encodeURIComponent(token));
+  if(!d.ok) return null;
+  return discogsToFields(await d.json(), bc);
+}
+/* Ricerca da barcode: Discogs (se token) poi MusicBrainz. Ritorna {data,fonte} o null. */
+async function lookupByBarcode(bc){
+  try{ const dg = await discogsByBarcode(bc); if(dg && (dg['Titolo']||dg['Artista'])) return {data:dg, fonte:'Discogs'}; }catch(e){}
+  let releases = []; try{ releases = await mbSearchRelease('barcode:'+bc); }catch(e){}
+  if(releases.length){ let r = releases[0]; try{ r = await mbRelease(r.id); }catch(e){} return {data:mbToFields(r,bc), fonte:'MusicBrainz'}; }
+  return null;
+}
+async function cercaDaBarcode(){
+  const inp = document.getElementById('mus-barcode-input'), st = document.getElementById('mus-bc-status');
+  const bc = (inp? inp.value : '').replace(/[^0-9]/g,'');
+  if(bc.length < 8){ if(st) st.textContent = 'Inserisci un codice a barre valido (EAN/UPC, min. 8 cifre).'; return; }
+  if(st) st.textContent = '🔎 Cerco '+bc+'…';
+  let res = null;
+  try{ res = await lookupByBarcode(bc); }
+  catch(e){ if(st) st.textContent = '⚠️ Ricerca non riuscita: '+esc(e.message||''); return; }
+  if(!res){
+    if(st) st.innerHTML = '❌ Nessun riscontro per '+bc+'. Suggerimento: aggiungi il token Discogs nelle Impostazioni per una copertura migliore. Puoi comunque inserire a mano.';
+    openObjForm('musica', null, {'Codice a barre': bc});
+    return;
+  }
+  if(st) st.innerHTML = '✅ Trovato su '+res.fonte+': <b>'+esc(res.data['Titolo']||'')+'</b> — '+esc(res.data['Artista']||'')+'. Verifica e salva.';
+  openObjForm('musica', null, res.data);
+}
 async function analizzaCopertina(fileList){
   const files = [...fileList].filter(f => f.type.startsWith('image/') || isPDF(f));
   const st = document.getElementById('mus-status');
@@ -1753,18 +1828,25 @@ async function analizzaCopertina(fileList){
   let releases = [], bc = null;
   try{
     bc = await decodeBarcode(canvas);
-    if(bc){ if(st) st.textContent = '📷 Codice a barre ' + bc + ' → cerco su MusicBrainz…'; releases = await mbSearchRelease('barcode:' + bc); }
-    if(!releases.length){
-      if(st) st.textContent = '🔤 Leggo il testo della copertina (OCR)…';
-      const lines = await ocrLines(canvas);
-      const q = [...lines].sort((a,b)=>b.length-a.length).slice(0,3).join(' ').slice(0,120);
-      if(q) releases = await mbSearchRelease(q);
+    if(bc){
+      if(st) st.textContent = '📷 Codice a barre ' + bc + ' → cerco…';
+      _pendingCover = canvas;   // la foto verrà allegata dopo il salvataggio
+      const res = await lookupByBarcode(bc);
+      if(res){
+        if(st) st.innerHTML = '✅ Trovato su ' + res.fonte + ': <b>' + esc(res.data['Titolo']||'') + '</b> — ' + esc(res.data['Artista']||'') + '. Verifica e salva.';
+        openObjForm('musica', null, res.data);
+        return;
+      }
     }
-  }catch(e){ if(st) st.textContent = '⚠️ MusicBrainz non raggiungibile: ' + esc(e.message||'') + '. Puoi inserire a mano.'; return; }
+    if(st) st.textContent = '🔤 Leggo il testo della copertina (OCR)…';
+    const lines = await ocrLines(canvas);
+    const q = [...lines].sort((a,b)=>b.length-a.length).slice(0,3).join(' ').slice(0,120);
+    if(q) releases = await mbSearchRelease(q);
+  }catch(e){ if(st) st.textContent = '⚠️ Database non raggiungibile: ' + esc(e.message||'') + '. Puoi inserire a mano.'; return; }
   _pendingCover = canvas;   // la foto verrà allegata dopo il salvataggio
   if(!releases.length){
     if(st) st.textContent = '❌ Nessun riscontro nei database. Compila a mano (la foto verrà comunque allegata).';
-    openObjForm('musica', null, {});
+    openObjForm('musica', null, bc ? {'Codice a barre': bc} : {});
     return;
   }
   let r = releases[0];
