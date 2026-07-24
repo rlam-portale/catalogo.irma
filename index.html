@@ -548,7 +548,8 @@ function show(view){
 
 /* ================== IMPOSTAZIONI ================== */
 function saveConfig(){
-  const t = document.getElementById('cfg-token').value.trim();
+  let t = document.getElementById('cfg-token').value.trim();
+  if(!t) t = (store('bib_token')||''); // riusa il token Airtable già salvato
   if(!t){ toast('Inserisci il Personal Access Token di Airtable'); return; }
   const b = normBase(document.getElementById('cfg-base').value);
   document.getElementById('cfg-base').value = b; // mostra la base corretta
