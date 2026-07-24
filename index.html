@@ -42,7 +42,7 @@
   .btn:disabled{opacity:.5; cursor:not-allowed}
 
   /* grid catalogo */
-  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:18px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:18px; align-items:start}
   .book{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; cursor:pointer; transition:transform .12s; display:flex; flex-direction:column}
   .book:hover{transform:translateY(-3px)}
   .cover{aspect-ratio:2/3; background:linear-gradient(135deg,#d9cbb8,#b9a488); display:flex; align-items:center; justify-content:center; position:relative}
@@ -585,11 +585,13 @@ function cardHTML(cat, o){
   }
   const stars = f['Valutazione'] ? `<div class="stars">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</div>` : '';
   const cov = coverSrc(cat, f);
+  const ar = fotoAR(cat, f);
+  const covStyle = ar ? ` style="aspect-ratio:${ar.toFixed(4)}"` : '';
   const code = f['Codice'] ? `<span class="code">${esc(codeStr(cat,f))}</span>` : '';
   const cbLabel = cat.label.split(',')[0].split(' e ')[0];
   const cb = `<span class="catbadge">${cat.icon} ${esc(cbLabel)}</span>`;
   return `<div class="book" onclick="openDetail('${cat.key}','${o.id}')">
-    <div class="cover">${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
+    <div class="cover"${covStyle}>${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
     <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f[cat.sub]||'')}</div>${stars}</div>
   </div>`;
 }
@@ -778,11 +780,13 @@ function openObjDetail(catKey, id){
   }
   if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
   const cov = coverSrc(cat, f);
+  const ar = fotoAR(cat, f);
+  const covStyle = ar ? ` style="aspect-ratio:${ar.toFixed(4)}; width:${ar>=1?'min(320px,100%)':'190px'}"` : '';
   const consBadge = f['Stato di conservazione']
     ? `<span class="pill" style="background:${CONS_COLORS[f['Stato di conservazione']]||'var(--muted)'}">${esc(f['Stato di conservazione'])}</span>` : '';
   modal(`
     <div class="detail">
-      <div class="cover">${cov?`<img src="${esc(cov)}" onclick="lightbox('${esc(cov)}')" style="cursor:zoom-in" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
+      <div class="cover"${covStyle}>${cov?`<img src="${esc(cov)}" onclick="lightbox('${esc(cov)}')" style="cursor:zoom-in" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
       <div class="meta">
         <div class="note" style="margin-bottom:2px">${cat.icon} ${esc(cat.label)} · <b>${esc(codeStr(cat,f))}</b></div>
         <h2>${esc(f['Titolo']||'')}</h2>
@@ -1169,7 +1173,8 @@ function loadScript(src){
 }
 
 async function fileToCanvas(file, maxSide){
-  const bmp = await createImageBitmap(file);
+  // 'from-image' applica l'orientamento EXIF: le foto da telefono non restano storte
+  const bmp = await createImageBitmap(file, {imageOrientation:'from-image'}).catch(()=>createImageBitmap(file));
   const k = Math.min(1, maxSide/Math.max(bmp.width,bmp.height));
   const c = document.createElement('canvas');
   c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
@@ -1519,6 +1524,8 @@ function coverSrc(cat, f){
   if(a){ const t=a.thumbnails; return (t && t.large && t.large.url) || a.url || ''; }
   return cat.biblio ? (f['Copertina']||'') : '';
 }
+/* rapporto larghezza/altezza della prima foto (Airtable lo fornisce): 0 se assente */
+function fotoAR(cat, f){ const a=(f[cat.foto]||[])[0]; return (a && a.width && a.height) ? (a.width/a.height) : 0; }
 function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
