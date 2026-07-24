@@ -219,6 +219,15 @@
       <p id="add-obj-desc">Compila la scheda di catalogazione. Le fotografie e i documenti si aggiungono dalla scheda dell'oggetto, subito dopo il salvataggio.</p>
       <button class="btn" id="add-obj-btn">➕ Nuova scheda</button>
     </div>
+    <div id="add-musica" class="setupbox hidden" style="margin-top:14px; max-width:680px">
+      <h2>💿 Aggiungi supporto musicale</h2>
+      <p>Carica una foto della <b>copertina</b> (o del codice a barre): leggo i dati e li recupero da MusicBrainz, poi verifichi e salvi. Funziona meglio con il barcode (CD e vinili recenti) o con testo di copertina leggibile.</p>
+      <div class="dropzone" id="mus-dropzone">📷 <b>Trascina o scegli la foto della copertina</b><br>immagine o PDF</div>
+      <input type="file" id="mus-file" accept="image/*,.pdf,application/pdf" style="display:none">
+      <p class="note" id="mus-status"></p>
+      <hr style="border:none; border-top:1px solid var(--line); margin:16px 0">
+      <button class="btn secondary" onclick="openObjForm('musica', null)">✍️ Inserimento manuale</button>
+    </div>
     <div id="add-libri" class="setupbox" style="margin-top:14px; max-width:680px">
       <h2>Aggiungi un libro</h2>
       <p>Inserisci l'ISBN e recupero automaticamente i dati, oppure compila la scheda a mano.</p>
@@ -286,7 +295,9 @@ const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fanta
 /* stato di conservazione: comune agli oggetti d'arte */
 const STATI_CONS = ['Ottimo','Buono','Discreto','Da restaurare','Restaurato'];
 const STATI_CONS_MOBILI = ['Ottimo','Buono','Discreto','Con tarli','Da restaurare','Restaurato'];
-const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Con tarli':'#a56a2b','Da restaurare':'var(--red)','Restaurato':'var(--blue)'};
+const GRADING = ['Mint','Near Mint','Excellent','Very Good','Good','Poor'];   // scala Goldmine (supporti musicali)
+const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Con tarli':'#a56a2b','Da restaurare':'var(--red)','Restaurato':'var(--blue)',
+  'Mint':'var(--green)','Near Mint':'#5a9e6f','Excellent':'var(--blue)','Very Good':'var(--amber)','Good':'#a56a2b','Poor':'var(--red)'};
 
 /* Descrittore campo per schede/form generici:
    {k:nome campo Airtable, l:etichetta, t:tipo, ch:[scelte], full:larghezza piena}
@@ -353,6 +364,21 @@ const CAMPI = {
     {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Diametro cm', l:'Diametro (cm)', t:'num'},
     {k:'Integrità', l:'Integrità'},
     {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
+  ],
+  musica: [
+    {k:'Artista', l:'Artista / gruppo'},
+    {k:'Tipologia supporto', l:'Tipologia supporto', t:'sel', ch:['Vinile','CD','Cassetta','Poster','DVD musicale','Altro']},
+    {k:'Anno di rilascio', l:'Anno di rilascio'},
+    {k:'Genere musicale', l:'Genere musicale'},
+    {k:'Etichetta', l:'Etichetta discografica'},
+    {k:'Codice di catalogo', l:'Codice di catalogo'},
+    {k:'Paese di stampa', l:'Paese di stampa'},
+    {k:'Codice a barre', l:'Codice a barre'},
+    {k:'Tracklist', l:'Tracklist', t:'area', full:1},
+    {k:'Stato di conservazione', l:'Grading copertina / busta', t:'sel', ch:GRADING},
+    {k:'Stato del supporto', l:'Stato del supporto (disco/nastro)', t:'sel', ch:GRADING},
+    {k:'Difetti e note', l:'Difetti e note di conservazione', t:'area', full:1},
+    {k:'Ambiente', l:'Collocazione fisica'}
   ]
 };
 /* coda comune a tutte le categorie d'arte (dopo i campi specifici) */
@@ -374,7 +400,8 @@ const CAT = [
   {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture},
   {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili},
   {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
-  {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche}
+  {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche},
+  {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true}
 ];
 const catByKey = k => CAT.find(c=>c.key===k);
 const catByTbl = t => CAT.find(c=>c.tbl===t);
@@ -385,6 +412,7 @@ let books = [], colls = [], loans = [];
 let objs = {};          // objs[catKey] = array di record; objs.libri === books (stesso riferimento)
 let loaded = false;
 let scanInCorso = false;   // usato dal controllo versione per non interrompere una scansione
+let _pendingCover = null;  // copertina analizzata da caricare dopo la creazione di un supporto musicale
 let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
@@ -540,8 +568,9 @@ function setAddCat(k){
   addCat = k; renderAddChips();
   const cat = catByKey(k);
   document.getElementById('add-libri').classList.toggle('hidden', k!=='libri');
-  document.getElementById('add-obj').classList.toggle('hidden', k==='libri');
-  if(k!=='libri'){
+  document.getElementById('add-musica').classList.toggle('hidden', k!=='musica');
+  document.getElementById('add-obj').classList.toggle('hidden', k==='libri' || k==='musica');
+  if(k!=='libri' && k!=='musica'){
     document.getElementById('add-obj-title').textContent = 'Nuova scheda — ' + cat.label;
     const btn = document.getElementById('add-obj-btn');
     btn.textContent = '➕ Nuovo: ' + cat.sing;
@@ -938,10 +967,10 @@ async function stampaScheda(catKey, id){
   toast('📄 PDF generato');
 }
 
-function openObjForm(catKey, id){
+function openObjForm(catKey, id, prefill){
   const cat = catByKey(catKey);
   const o = id ? objById(catKey, id) : null;
-  const f = o ? o.fields : {};
+  const f = o ? o.fields : (prefill||{});
   const campo = fld => {
     const val = f[fld.k];
     const full = fld.full ? ' style="grid-column:1/-1"' : '';
@@ -996,8 +1025,10 @@ async function saveObj(catKey, id){
     } else {
       const [rec] = await creaInTabella(cat.tbl, [fields]);
       objs[catKey].push(rec);
+      const hadCover = !!_pendingCover;
+      if(_pendingCover){ try{ await uploadScan(rec.id, _pendingCover, 'copertina', cat.foto); await ricaricaRecord(catKey, rec.id); }catch(e){} _pendingCover=null; }
       fillFilters(); renderAll();
-      toast('✅ Scheda creata — ora aggiungi le fotografie');
+      toast(hadCover ? '✅ Scheda creata con copertina' : '✅ Scheda creata — ora aggiungi le fotografie');
       openObjDetail(catKey, rec.id);
     }
   }catch(e){ toast(e.message); }
@@ -1671,6 +1702,88 @@ function initDropzone(){
 }
 initDropzone();
 
+/* ================== SUPPORTI MUSICALI: autofill da foto (MusicBrainz) ==================
+   Legge il barcode (ZXing) o il testo di copertina (OCR), interroga MusicBrainz
+   — libero e aperto ai browser (CORS *) — e precompila la scheda del supporto. */
+const MB = 'https://musicbrainz.org/ws/2/';
+const PAESI = {US:'Stati Uniti',GB:'Regno Unito',UK:'Regno Unito',IT:'Italia',DE:'Germania',FR:'Francia',JP:'Giappone',NL:'Paesi Bassi',ES:'Spagna',CA:'Canada',AU:'Australia',XW:'Mondiale',XE:'Europa'};
+async function mbGet(path){
+  const r = await fetch(MB + path + (path.includes('?')?'&':'?') + 'fmt=json');
+  if(!r.ok) throw new Error('MusicBrainz ' + r.status);
+  return r.json();
+}
+async function mbSearchRelease(query){ const j = await mbGet('release?query=' + encodeURIComponent(query) + '&limit=5'); return j.releases || []; }
+async function mbRelease(mbid){ return mbGet('release/' + mbid + '?inc=recordings+labels+artist-credits+tags'); }
+function mapFormato(fmt){
+  fmt = (fmt||'').toLowerCase();
+  if(/vinyl|lp|7"|10"|12"/.test(fmt)) return 'Vinile';
+  if(/\bcd\b/.test(fmt)) return 'CD';
+  if(/cassette/.test(fmt)) return 'Cassetta';
+  return '';
+}
+function mbToFields(r, barcode){
+  const art = (r['artist-credit']||[]).map(a=> a.name || (a.artist && a.artist.name)).filter(Boolean).join(', ');
+  const media = (r.media||[])[0] || {};
+  const li = (r['label-info']||[])[0] || {};
+  const tags = (r.tags||[]).slice().sort((a,b)=>(b.count||0)-(a.count||0)).slice(0,3).map(t=>t.name);
+  const tracks = [];
+  (r.media||[]).forEach(m => (m.tracks||[]).forEach(t => tracks.push((t.number||tracks.length+1) + '. ' + (t.title||''))));
+  return {
+    'Titolo': r.title || '',
+    'Artista': art,
+    'Tipologia supporto': mapFormato(media.format),
+    'Anno di rilascio': (r.date||'').slice(0,4),
+    'Genere musicale': tags.join(', '),
+    'Etichetta': (li.label && li.label.name) || '',
+    'Codice di catalogo': li['catalog-number'] || '',
+    'Paese di stampa': PAESI[r.country] || r.country || '',
+    'Codice a barre': r.barcode || barcode || '',
+    'Tracklist': tracks.join('\n'),
+    'Note': 'ℹ️ Dati recuperati da MusicBrainz: verifica edizione, anno e stato di conservazione.'
+  };
+}
+async function analizzaCopertina(fileList){
+  const files = [...fileList].filter(f => f.type.startsWith('image/') || isPDF(f));
+  const st = document.getElementById('mus-status');
+  if(!files.length){ if(st) st.textContent = 'Carica una foto (immagine o PDF) della copertina.'; return; }
+  if(st) st.textContent = '🔎 Analizzo la copertina…';
+  let canvas;
+  try{ canvas = isPDF(files[0]) ? (await pdfToCanvases(files[0]))[0].canvas : await fileToCanvas(files[0], 1800); }
+  catch(e){ if(st) st.textContent = 'Immagine non leggibile.'; return; }
+  let releases = [], bc = null;
+  try{
+    bc = await decodeBarcode(canvas);
+    if(bc){ if(st) st.textContent = '📷 Codice a barre ' + bc + ' → cerco su MusicBrainz…'; releases = await mbSearchRelease('barcode:' + bc); }
+    if(!releases.length){
+      if(st) st.textContent = '🔤 Leggo il testo della copertina (OCR)…';
+      const lines = await ocrLines(canvas);
+      const q = [...lines].sort((a,b)=>b.length-a.length).slice(0,3).join(' ').slice(0,120);
+      if(q) releases = await mbSearchRelease(q);
+    }
+  }catch(e){ if(st) st.textContent = '⚠️ MusicBrainz non raggiungibile: ' + esc(e.message||'') + '. Puoi inserire a mano.'; return; }
+  _pendingCover = canvas;   // la foto verrà allegata dopo il salvataggio
+  if(!releases.length){
+    if(st) st.textContent = '❌ Nessun riscontro nei database. Compila a mano (la foto verrà comunque allegata).';
+    openObjForm('musica', null, {});
+    return;
+  }
+  let r = releases[0];
+  try{ r = await mbRelease(r.id); }catch(e){}
+  const data = mbToFields(r, bc);
+  if(st) st.innerHTML = '✅ Trovato: <b>' + esc(data['Titolo']||'') + '</b> — ' + esc(data['Artista']||'') + '. Verifica e salva.';
+  openObjForm('musica', null, data);
+}
+function initMusDropzone(){
+  const dz = document.getElementById('mus-dropzone'), fi = document.getElementById('mus-file');
+  if(!dz || !fi) return;
+  dz.addEventListener('click', ()=>fi.click());
+  fi.addEventListener('change', ()=>{ if(fi.files.length) analizzaCopertina(fi.files); fi.value=''; });
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) analizzaCopertina(e.dataTransfer.files); });
+}
+initMusDropzone();
+
 /* ================== IMPORT CSV ================== */
 function parseCSV(text){
   const sep = (text.split('\n')[0].match(/;/g)||[]).length > (text.split('\n')[0].match(/,/g)||[]).length ? ';' : ',';
@@ -1793,7 +1906,7 @@ function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
 function modal(html, wide){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal${wide?' wide':''}">${html}</div></div>`; }
-function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; _pendingCover=null; }
 let toastTimer;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500); }
 
