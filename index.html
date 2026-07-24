@@ -593,7 +593,7 @@ function cardHTML(cat, o){
   const cbLabel = cat.label.split(',')[0].split(' e ')[0];
   const cb = `<span class="catbadge">${cat.icon} ${esc(cbLabel)}</span>`;
   return `<div class="book" onclick="openDetail('${cat.key}','${o.id}')">
-    <div class="cover"${covStyle}>${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
+    <div class="cover"${covStyle}>${cov ? `<img src="${esc(cov)}" loading="lazy" onload="fixAR(this)" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
     <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f[cat.sub]||'')}</div>${stars}</div>
   </div>`;
 }
@@ -662,7 +662,7 @@ function openBookDetail(id){
   const cov = coverSrc(catByKey('libri'), f);
   modal(`
     <div class="detail">
-      <div class="cover">${cov?`<img src="${esc(cov)}" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
+      <div class="cover">${cov?`<img src="${esc(cov)}" onload="fixAR(this)" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
       <div class="meta">
         <h2>${esc(f['Titolo']||'')}</h2>
         <div class="auth">${esc(f['Autore']||'')}</div>
@@ -790,7 +790,7 @@ function openObjDetail(catKey, id){
     ? `<span class="pill" style="background:${CONS_COLORS[f['Stato di conservazione']]||'var(--muted)'}">${esc(f['Stato di conservazione'])}</span>` : '';
   modal(`
     <div class="detail">
-      <div class="cover"${covStyle}>${cov?`<img src="${esc(cov)}" onclick="lightbox('${esc(cov)}')" style="cursor:zoom-in" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
+      <div class="cover"${covStyle}>${cov?`<img src="${esc(cov)}" onclick="lightbox('${esc(cov)}')" style="cursor:zoom-in" onload="fixAR(this)" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
       <div class="meta">
         <div class="note" style="margin-bottom:2px">${cat.icon} ${esc(cat.label)} · <b>${esc(codeStr(cat,f))}</b></div>
         <h2>${esc(f['Titolo']||'')}</h2>
@@ -1768,6 +1768,9 @@ function coverSrc(cat, f){
 }
 /* rapporto larghezza/altezza della prima foto (Airtable lo fornisce): 0 se assente */
 function fotoAR(cat, f){ const a=(f[cat.foto]||[])[0]; return (a && a.width && a.height) ? (a.width/a.height) : 0; }
+/* fallback robusto: appena l'immagine è caricata nel browser, imposta il rapporto
+   dal suo formato reale — così è corretto anche se Airtable non ha ancora calcolato le misure */
+function fixAR(img){ const w=img.naturalWidth, h=img.naturalHeight; if(w && h) img.parentElement.style.aspectRatio = (w/h).toFixed(4); }
 function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
