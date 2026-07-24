@@ -425,6 +425,15 @@ let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
 const DEFAULT_BASE = 'appI6zidIy0DriyoG'; // Base "Biblioteca Personale"
+/* Corregge la confusione visiva I maiuscola / l minuscola nell'ID base: se il
+   valore inserito coincide (a meno del maiuscolo/minuscolo) con la base nota,
+   usa quella corretta; se vuoto, usa la base predefinita. */
+function normBase(b){
+  b = (b||'').trim();
+  if(!b) return DEFAULT_BASE;
+  if(b.toLowerCase() === DEFAULT_BASE.toLowerCase()) return DEFAULT_BASE;
+  return b;
+}
 function cfg(){ return { token: store('bib_token'), base: store('bib_base') || DEFAULT_BASE }; }
 
 /* ================== API AIRTABLE ================== */
@@ -540,8 +549,9 @@ function show(view){
 /* ================== IMPOSTAZIONI ================== */
 function saveConfig(){
   const t = document.getElementById('cfg-token').value.trim();
-  const b = document.getElementById('cfg-base').value.trim();
-  if(!t || !b){ toast('Inserisci token e ID base'); return; }
+  if(!t){ toast('Inserisci il Personal Access Token di Airtable'); return; }
+  const b = normBase(document.getElementById('cfg-base').value);
+  document.getElementById('cfg-base').value = b; // mostra la base corretta
   store('bib_token', t); store('bib_base', b);
   const dg = document.getElementById('cfg-discogs'); if(dg) store('discogs_token', dg.value.trim());
   testConnection(true);
@@ -550,9 +560,9 @@ async function testConnection(goCatalog){
   const st = document.getElementById('cfg-status');
   // Usa sempre i valori attualmente nei campi (evita di testare un token vecchio)
   const tf = (document.getElementById('cfg-token')||{}).value;
-  const bf = (document.getElementById('cfg-base')||{}).value;
+  const bfEl = document.getElementById('cfg-base');
   if(tf && tf.trim()) store('bib_token', tf.trim());
-  if(bf && bf.trim()) store('bib_base', bf.trim());
+  if(bfEl){ const nb = normBase(bfEl.value); bfEl.value = nb; store('bib_base', nb); }
   const df = (document.getElementById('cfg-discogs')||{}).value;
   if(df !== undefined) store('discogs_token', (df||'').trim());
   st.textContent = 'Verifico…';
