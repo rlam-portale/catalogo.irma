@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La mia Biblioteca</title>
+<title>Catalogo Dajlani Arezzo</title>
 <style>
   :root{
     --bg:#f7f4ef; --card:#ffffff; --ink:#2b2620; --muted:#8a7f70;
@@ -51,6 +51,33 @@
   .badge{position:absolute; top:8px; left:8px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; color:#fff}
   .code{position:absolute; top:8px; right:8px; font-size:11px; font-weight:700; padding:3px 7px; border-radius:999px;
     background:rgba(43,38,32,.72); color:#fff; letter-spacing:.3px; font-family:Georgia,serif}
+  .catbadge{position:absolute; bottom:8px; left:8px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px;
+    background:rgba(255,255,255,.92); color:var(--accent-dark); box-shadow:var(--shadow)}
+
+  /* chip categoria */
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px}
+  .chip{border:1px solid var(--line); background:var(--card); color:var(--muted); padding:7px 14px; border-radius:999px;
+    cursor:pointer; font-size:14px; font-weight:500; display:inline-flex; align-items:center; gap:6px}
+  .chip:hover{background:var(--bg)}
+  .chip.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .chip .n{font-size:12px; opacity:.75}
+
+  /* galleria foto + documenti nella scheda */
+  .gallery{display:flex; gap:8px; flex-wrap:wrap; margin:10px 0}
+  .gallery .ph{position:relative; width:84px; height:84px; border-radius:8px; overflow:hidden; border:1px solid var(--line); background:var(--bg)}
+  .gallery .ph img{width:100%; height:100%; object-fit:cover; cursor:pointer}
+  .gallery .ph .del{position:absolute; top:2px; right:2px; width:20px; height:20px; border:none; border-radius:50%;
+    background:rgba(40,30,15,.7); color:#fff; font-size:13px; line-height:1; cursor:pointer; padding:0}
+  .gallery .add{width:84px; height:84px; border:2px dashed var(--accent); border-radius:8px; background:rgba(139,94,52,.05);
+    color:var(--accent-dark); font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center}
+  .doclist{list-style:none; margin:6px 0}
+  .doclist li{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font-size:13.5px}
+  .doclist li:last-child{border-bottom:none}
+  .doclist .del{border:none; background:none; color:var(--red); cursor:pointer; font-size:15px; margin-left:auto}
+  .seclabel{font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700; margin:16px 0 4px}
+  .lightbox{position:fixed; inset:0; background:rgba(20,14,6,.9); display:flex; align-items:center; justify-content:center;
+    z-index:300; padding:24px; cursor:zoom-out}
+  .lightbox img{max-width:100%; max-height:100%; border-radius:6px; box-shadow:0 10px 50px rgba(0,0,0,.5)}
   .binfo{padding:10px 12px 12px}
   .btitle{font-size:14px; font-weight:600; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
   .bauthor{font-size:12.5px; color:var(--muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -130,7 +157,7 @@
 
 <header>
   <div class="topbar">
-    <div class="logo">📚 La mia <span>Biblioteca</span></div>
+    <div class="logo">🏛️ CATALOGO <span>Dajlani Arezzo</span></div>
     <nav id="nav">
       <button data-view="catalogo" class="active">Catalogo</button>
       <button data-view="aggiungi">+ Aggiungi</button>
@@ -165,32 +192,33 @@
   <!-- ============ CATALOGO ============ -->
   <section id="view-catalogo">
     <div class="tiles" id="tiles"></div>
+    <div class="chips" id="cat-chips"></div>
     <div class="toolbar">
-      <input type="search" id="q" placeholder="Cerca per titolo, autore, ISBN…" oninput="renderCatalog()">
-      <select id="f-stato" onchange="renderCatalog()">
-        <option value="">Stato: tutti</option>
-        <option>Da leggere</option><option>In lettura</option><option>Letto</option><option>Abbandonato</option>
-      </select>
-      <select id="f-genere" onchange="renderCatalog()"><option value="">Genere: tutti</option></select>
+      <input type="search" id="q" placeholder="Cerca per nome, autore, codice, materia…" oninput="renderCatalog()">
       <select id="f-coll" onchange="renderCatalog()"><option value="">Collocazione: tutte</option></select>
       <select id="f-sort" onchange="renderCatalog()">
-        <option value="Titolo">Ordina: titolo</option>
-        <option value="Autore">Ordina: autore</option>
-        <option value="Anno">Ordina: anno</option>
         <option value="Codice">Ordina: codice</option>
+        <option value="Titolo">Ordina: nome</option>
+        <option value="sub">Ordina: autore/origine</option>
         <option value="recenti">Ordina: aggiunti di recente</option>
       </select>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
     </div>
     <div class="counts" id="count"></div>
     <div id="catalog" class="grid"></div>
-    <div id="catalog-empty" class="empty hidden">Nessun libro trovato.</div>
+    <div id="catalog-empty" class="empty hidden">Nessun oggetto trovato.</div>
     <div id="catalog-loading" class="spinner hidden"></div>
   </section>
 
   <!-- ============ AGGIUNGI ============ -->
   <section id="view-aggiungi" class="hidden">
-    <div class="setupbox" style="margin-top:10px; max-width:680px">
+    <div class="chips" id="add-chips" style="max-width:680px; margin:10px auto 0"></div>
+    <div id="add-obj" class="setupbox hidden" style="margin-top:14px; max-width:680px; text-align:center">
+      <h2 id="add-obj-title">Nuovo oggetto</h2>
+      <p id="add-obj-desc">Compila la scheda di catalogazione. Le fotografie e i documenti si aggiungono dalla scheda dell'oggetto, subito dopo il salvataggio.</p>
+      <button class="btn" id="add-obj-btn">➕ Nuova scheda</button>
+    </div>
+    <div id="add-libri" class="setupbox" style="margin-top:14px; max-width:680px">
       <h2>Aggiungi un libro</h2>
       <p>Inserisci l'ISBN e recupero automaticamente i dati, oppure compila la scheda a mano.</p>
       <div class="isbnrow">
@@ -253,10 +281,93 @@
 const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti' };
 const STATO_COLORS = {'Da leggere':'var(--blue)','In lettura':'var(--amber)','Letto':'var(--green)','Abbandonato':'var(--muted)'};
 const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fantasy','Storia','Biografia','Poesia','Arte','Scienza','Filosofia','Viaggi','Fumetto','Bambini/Ragazzi','Altro'];
+
+/* stato di conservazione: comune agli oggetti d'arte */
+const STATI_CONS = ['Ottimo','Buono','Discreto','Da restaurare','Restaurato'];
+const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Da restaurare':'var(--red)','Restaurato':'var(--blue)'};
+
+/* Descrittore campo per schede/form generici:
+   {k:nome campo Airtable, l:etichetta, t:tipo, ch:[scelte], full:larghezza piena}
+   tipi: text | num | area | sel | date | cur */
+const CAMPI = {
+  quadri: [
+    {k:'Attribuzione', l:'Attribuzione', t:'sel', ch:['Autografo','Attribuito a','Bottega di','Scuola di','Cerchia di','Seguace di','Copia da','Anonimo']},
+    {k:'Autore', l:'Autore'}, {k:'Ambito', l:'Ambito / scuola'},
+    {k:'Soggetto', l:'Soggetto'},
+    {k:'Tecnica', l:'Tecnica', t:'sel', ch:['Olio su tela','Olio su tavola','Tempera','Acquerello','Tecnica mista','Incisione','Acquaforte','Litografia','Stampa','Disegno','Altro']},
+    {k:'Anno', l:'Anno', t:'num'}, {k:'Epoca', l:'Epoca / datazione'},
+    {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Larghezza cm', l:'Larghezza (cm)', t:'num'},
+    {k:'Cornice', l:'Cornice'},
+    {k:'Firma e iscrizioni', l:'Firma e iscrizioni', t:'area', full:1},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS},
+    {k:'Note di conservazione', l:'Note di conservazione', t:'area', full:1}
+  ],
+  tappeti: [
+    {k:'Origine', l:'Origine / manifattura'},
+    {k:'Materiale', l:'Materiale', t:'sel', ch:['Lana','Seta','Lana e seta','Lana su cotone','Cotone','Altro']},
+    {k:'Annodatura', l:'Annodatura'}, {k:'Densità nodi', l:'Densità nodi'},
+    {k:'Lunghezza cm', l:'Lunghezza (cm)', t:'num'}, {k:'Larghezza cm', l:'Larghezza (cm)', t:'num'},
+    {k:'Epoca', l:'Epoca / datazione'},
+    {k:'Decoro', l:'Decoro', t:'area', full:1},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
+  ],
+  sculture: [
+    {k:'Autore', l:'Autore / ambito'}, {k:'Soggetto', l:'Soggetto'},
+    {k:'Materiale', l:'Materiale', t:'sel', ch:['Marmo','Bronzo','Legno','Legno policromo','Terracotta','Gesso','Pietra','Avorio','Altro']},
+    {k:'Tecnica', l:'Tecnica'}, {k:'Epoca', l:'Epoca / datazione'},
+    {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Dimensioni', l:'Dimensioni complete'},
+    {k:'Firma e iscrizioni', l:'Firma e iscrizioni', t:'area', full:1},
+    {k:'Base', l:'Base / peana'},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
+  ],
+  mobili: [
+    {k:'Tipologia', l:'Tipologia'}, {k:'Epoca e stile', l:'Epoca e stile'},
+    {k:'Essenza', l:'Essenza / materiale'},
+    {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Larghezza cm', l:'Larghezza (cm)', t:'num'}, {k:'Profondità cm', l:'Profondità (cm)', t:'num'},
+    {k:'Restauri', l:'Restauri', t:'area', full:1},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
+  ],
+  ceramiche: [
+    {k:'Manifattura', l:'Manifattura'}, {k:'Marchio', l:'Marchio', t:'area', full:1},
+    {k:'Tipologia', l:'Tipologia'},
+    {k:'Materiale', l:'Materiale', t:'sel', ch:['Porcellana','Maiolica','Terracotta invetriata','Grès','Terraglia','Ceramica','Altro']},
+    {k:'Decoro', l:'Decoro', t:'area', full:1},
+    {k:'Epoca', l:'Epoca / datazione'},
+    {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Diametro cm', l:'Diametro (cm)', t:'num'},
+    {k:'Integrità', l:'Integrità'},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
+  ]
+};
+/* coda comune a tutte le categorie d'arte (dopo i campi specifici) */
+const CAMPI_COMUNI = [
+  {k:'Provenienza', l:'Provenienza', t:'area', full:1},
+  {k:'Data acquisizione', l:'Data di acquisizione', t:'date'},
+  {k:'Prezzo acquisto', l:'Prezzo d\'acquisto', t:'cur'},
+  {k:'Valore stimato', l:'Valore stimato', t:'cur'},
+  {k:'Data stima', l:'Data della stima', t:'date'},
+  {k:'Note', l:'Note', t:'area', full:1}
+];
+Object.keys(CAMPI).forEach(k => CAMPI[k] = CAMPI[k].concat(CAMPI_COMUNI));
+
+/* Categorie del catalogo. 'biblio' marca i Libri, che tengono ISBN/scansioni/CSV/prestiti/wishlist. */
+const CAT = [
+  {key:'libri',     tbl:'Libri',     label:'Libri',                    plur:'libri',     sing:'libro',    prefix:'BIB', icon:'📚', sub:'Autore',       foto:'Scansioni', biblio:true},
+  {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri},
+  {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti},
+  {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture},
+  {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Tipologia',    foto:'Foto', campi:CAMPI.mobili},
+  {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche}
+];
+const catByKey = k => CAT.find(c=>c.key===k);
+const catByTbl = t => CAT.find(c=>c.tbl===t);
+function codeStr(cat, f){ return f['Codice'] ? cat.prefix+'-'+String(f['Codice']).padStart(4,'0') : ''; }
+
 let mem = {};           // fallback se localStorage non disponibile
 let books = [], colls = [], loans = [];
+let objs = {};          // objs[catKey] = array di record; objs.libri === books (stesso riferimento)
 let loaded = false;
 let scanInCorso = false;   // usato dal controllo versione per non interrompere una scansione
+let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
 const DEFAULT_BASE = 'appI6zidIy0DriyoG'; // Base "Biblioteca Personale"
@@ -296,29 +407,33 @@ const deleteRec  = (t, id) => api(`${encodeURIComponent(t)}/${id}`, {method:'DEL
    lo assegna l'app. Il numero più alto lo chiedo al server e non alla copia locale:
    così due schede aperte insieme non finiscono per assegnare lo stesso codice.
    Come in un Autonumber i numeri non si riusano mai: dopo una cancellazione resta un buco. */
-async function ultimoCodice(){
+async function ultimoCodice(tbl){
+  tbl = tbl || TBL.libri;
   try{
-    const j = await api(`${encodeURIComponent(TBL.libri)}?pageSize=1&fields%5B%5D=Codice`
+    const j = await api(`${encodeURIComponent(tbl)}?pageSize=1&fields%5B%5D=Codice`
       + `&sort%5B0%5D%5Bfield%5D=Codice&sort%5B0%5D%5Bdirection%5D=desc`);
     const r = (j.records||[])[0];
     return Number(r && r.fields['Codice']) || 0;
   }catch(e){
-    // campo assente o server irraggiungibile: ripiego sul massimo tra i libri già caricati
-    return books.reduce((m,b)=> Math.max(m, Number(b.fields['Codice'])||0), 0);
+    // campo assente o server irraggiungibile: ripiego sul massimo tra gli oggetti già caricati
+    const cat = catByTbl(tbl);
+    const arr = (cat && objs[cat.key]) || books;
+    return arr.reduce((m,b)=> Math.max(m, Number(b.fields['Codice'])||0), 0);
   }
 }
-/* crea uno o più libri assegnando i codici in sequenza */
-async function creaLibri(lista){
-  let n = await ultimoCodice();
+/* crea uno o più record in una tabella assegnando i codici progressivi in sequenza */
+async function creaInTabella(tbl, lista){
+  let n = await ultimoCodice(tbl);
   const recs = lista.map(f => ({fields: {...f, 'Codice': ++n}}));
   const out = [];
   for(let i=0; i<recs.length; i+=10){
-    const j = await createMany(TBL.libri, recs.slice(i,i+10));
+    const j = await createMany(tbl, recs.slice(i,i+10));
     out.push(...j.records);
     if(i+10 < recs.length) await new Promise(r=>setTimeout(r,250));
   }
   return out;
 }
+async function creaLibri(lista){ return creaInTabella(TBL.libri, lista); }
 async function creaLibro(fields){ return (await creaLibri([fields]))[0]; }
 
 /* ================== CARICAMENTO DATI ================== */
@@ -328,7 +443,11 @@ async function loadAll(force){
   if(!token || !base){ show('impostazioni'); return; }
   document.getElementById('catalog-loading').classList.remove('hidden');
   try{
-    [books, colls, loans] = await Promise.all([ listAll(TBL.libri), listAll(TBL.coll), listAll(TBL.prestiti) ]);
+    const res = await Promise.all([ ...CAT.map(c=>listAll(c.tbl)), listAll(TBL.coll), listAll(TBL.prestiti) ]);
+    CAT.forEach((c,i)=> objs[c.key] = res[i]);
+    books = objs.libri;                 // stesso riferimento: il codice dei libri continua a funzionare
+    colls = res[CAT.length];
+    loans = res[CAT.length+1];
     loaded = true;
     fillFilters(); renderAll();
   }catch(e){ toast(e.message); if(String(e.message).includes('401')||String(e.message).includes('403')) show('impostazioni'); }
@@ -336,7 +455,16 @@ async function loadAll(force){
 }
 function collName(id){ const c = colls.find(c=>c.id===id); return c ? (c.fields['Nome']||'') : ''; }
 function bookById(id){ return books.find(b=>b.id===id); }
+function objById(catKey,id){ return (objs[catKey]||[]).find(o=>o.id===id); }
 function activeLoanFor(bookId){ return loans.find(l => (l.fields['Libro']||[]).includes(bookId) && l.fields['Stato']!=='Restituito'); }
+/* è "posseduto"? per i libri esclude la wishlist; le altre categorie sono sempre possedute */
+function posseduto(catKey, f){ return catKey!=='libri' || (f['Possesso']||'Posseduto')!=='Desiderato'; }
+/* tutti gli oggetti posseduti, con la loro categoria: [{cat, rec}] */
+function tuttiOggetti(){
+  const out = [];
+  for(const c of CAT) for(const rec of (objs[c.key]||[])) if(posseduto(c.key, rec.fields)) out.push({cat:c, rec});
+  return out;
+}
 
 /* ================== NAVIGAZIONE ================== */
 document.getElementById('nav').addEventListener('click', e=>{
@@ -351,6 +479,7 @@ function show(view){
     document.getElementById('cfg-base').value  = cfg().base  || '';
   }
   if(['catalogo','prestiti','wishlist','collocazioni'].includes(view)) loadAll();
+  if(view==='aggiungi'){ loadAll(); renderAddChips(); setAddCat(addCat); }
 }
 
 /* ================== IMPOSTAZIONI ================== */
@@ -372,64 +501,103 @@ async function testConnection(goCatalog){
 }
 
 /* ================== RENDER ================== */
-function renderAll(){ renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); }
+let addCat = 'libri';
+function renderAll(){ renderChips(); renderAddChips(); renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); }
+
+function contaCat(k){ return (objs[k]||[]).filter(o=>posseduto(k,o.fields)).length; }
+
+function renderChips(){
+  const el = document.getElementById('cat-chips'); if(!el) return;
+  const tot = CAT.reduce((s,c)=>s+contaCat(c.key),0);
+  const chip = (key,icon,label,n)=>`<div class="chip ${catFiltro===key?'active':''}" onclick="setCatFiltro('${key}')">${icon?icon+' ':''}${esc(label)} <span class="n">${n}</span></div>`;
+  el.innerHTML = chip('','','Tutte',tot) + CAT.map(c=>chip(c.key,c.icon,c.label,contaCat(c.key))).join('');
+}
+function setCatFiltro(k){ catFiltro=k; renderChips(); renderCatalog(); }
+
+function renderAddChips(){
+  const el = document.getElementById('add-chips'); if(!el) return;
+  el.innerHTML = CAT.map(c=>`<div class="chip ${addCat===c.key?'active':''}" onclick="setAddCat('${c.key}')">${c.icon} ${esc(c.label)}</div>`).join('');
+}
+function setAddCat(k){
+  addCat = k; renderAddChips();
+  const cat = catByKey(k);
+  document.getElementById('add-libri').classList.toggle('hidden', k!=='libri');
+  document.getElementById('add-obj').classList.toggle('hidden', k==='libri');
+  if(k!=='libri'){
+    document.getElementById('add-obj-title').textContent = 'Nuova scheda — ' + cat.label;
+    const btn = document.getElementById('add-obj-btn');
+    btn.textContent = '➕ Nuovo: ' + cat.sing;
+    btn.onclick = ()=>openObjForm(k, null);
+  }
+}
 
 function renderTiles(){
-  const owned = books.filter(b => (b.fields['Possesso']||'Posseduto')!=='Desiderato');
-  const read  = owned.filter(b => b.fields['Stato']==='Letto').length;
-  const reading = owned.filter(b => b.fields['Stato']==='In lettura').length;
-  const out = loans.filter(l => l.fields['Stato']!=='Restituito').length;
-  const wish = books.length - owned.length;
-  document.getElementById('tiles').innerHTML = [
-    [owned.length,'Libri in biblioteca'], [read,'Letti'], [reading,'In lettura'], [out,'In prestito'], [wish,'Nella lista desideri']
-  ].map(([n,l])=>`<div class="tile"><div class="num">${n}</div><div class="lbl">${l}</div></div>`).join('');
+  const tot = CAT.reduce((s,c)=>s+contaCat(c.key),0);
+  const valore = tuttiOggetti().reduce((s,{rec})=> s + (Number(rec.fields['Valore stimato'])||0), 0);
+  const tiles = [[tot,'Oggetti in catalogo']];
+  CAT.forEach(c=> tiles.push([contaCat(c.key), c.label]));
+  if(valore) tiles.push(['€ '+valore.toLocaleString('it-IT'), 'Valore stimato']);
+  document.getElementById('tiles').innerHTML = tiles.map(([n,l])=>`<div class="tile"><div class="num">${n}</div><div class="lbl">${esc(l)}</div></div>`).join('');
 }
 
 function fillFilters(){
-  const g = document.getElementById('f-genere');
-  const gset = new Set(); books.forEach(b => (b.fields['Genere']||[]).forEach(x=>gset.add(x)));
-  g.innerHTML = '<option value="">Genere: tutti</option>' + [...gset].sort().map(x=>`<option>${esc(x)}</option>`).join('');
-  const c = document.getElementById('f-coll');
+  const c = document.getElementById('f-coll'); const cur = c.value;
   c.innerHTML = '<option value="">Collocazione: tutte</option>' + colls.map(x=>`<option value="${x.id}">${esc(x.fields['Nome']||'')}</option>`).join('');
+  c.value = cur;
 }
 
 function renderCatalog(){
   const q = (document.getElementById('q').value||'').toLowerCase();
-  const fs = document.getElementById('f-stato').value;
-  const fg = document.getElementById('f-genere').value;
   const fc = document.getElementById('f-coll').value;
   const sort = document.getElementById('f-sort').value;
-  let list = books.filter(b => (b.fields['Possesso']||'Posseduto')!=='Desiderato');
-  if(q)  list = list.filter(b => ['Titolo','Autore','ISBN','Editore','Descrizione','Codice'].some(f => String(b.fields[f]||'').toLowerCase().includes(q))
-                             || (b.fields['Tag']||[]).some(t => String(t).toLowerCase().includes(q)));
-  if(fs) list = list.filter(b => b.fields['Stato']===fs);
-  if(fg) list = list.filter(b => (b.fields['Genere']||[]).includes(fg));
-  if(fc) list = list.filter(b => (b.fields['Collocazione']||[]).includes(fc));
-  if(sort==='recenti') list.sort((a,b)=> (b.createdTime||'').localeCompare(a.createdTime||''));
-  else if(sort==='Anno' || sort==='Codice') list.sort((a,b)=> (a.fields[sort]||0)-(b.fields[sort]||0));
-  else list.sort((a,b)=> String(a.fields[sort]||'').localeCompare(String(b.fields[sort]||''), 'it'));
-  document.getElementById('count').textContent = `${list.length} libr${list.length===1?'o':'i'}`;
-  document.getElementById('catalog').innerHTML = list.map(cardHTML).join('');
+  let list = tuttiOggetti();
+  if(catFiltro) list = list.filter(x=>x.cat.key===catFiltro);
+  if(fc) list = list.filter(x=>(x.rec.fields['Collocazione']||[]).includes(fc));
+  if(q) list = list.filter(({cat,rec})=>{
+    const f = rec.fields;
+    const hay = [codeStr(cat,f), f['Titolo'], f[cat.sub], f['ISBN'], f['Autore'], f['Ambito'], f['Materiale'],
+      f['Tecnica'], f['Manifattura'], f['Origine'], f['Tipologia'], f['Epoca'], f['Editore'],
+      f['Stato'], f['Stato di conservazione'], f['Note'], f['Descrizione']].map(v=>String(v||'').toLowerCase());
+    const tags = (f['Genere']||[]).concat(f['Tag']||[]).map(t=>String(t).toLowerCase());
+    return hay.some(h=>h.includes(q)) || tags.some(t=>t.includes(q));
+  });
+  const subOf = ({cat,rec}) => String(rec.fields[cat.sub]||'');
+  if(sort==='recenti') list.sort((a,b)=> (b.rec.createdTime||'').localeCompare(a.rec.createdTime||''));
+  else if(sort==='sub') list.sort((a,b)=> subOf(a).localeCompare(subOf(b),'it'));
+  else if(sort==='Codice') list.sort((a,b)=> a.cat.key===b.cat.key
+      ? (a.rec.fields['Codice']||0)-(b.rec.fields['Codice']||0)
+      : a.cat.label.localeCompare(b.cat.label,'it'));
+  else list.sort((a,b)=> String(a.rec.fields['Titolo']||'').localeCompare(String(b.rec.fields['Titolo']||''), 'it'));
+  document.getElementById('count').textContent = `${list.length} ${list.length===1?'oggetto':'oggetti'}`;
+  document.getElementById('catalog').innerHTML = list.map(x=>cardHTML(x.cat, x.rec)).join('');
   document.getElementById('catalog-empty').classList.toggle('hidden', list.length>0 || !loaded);
 }
 
-function cardHTML(b){
-  const f = b.fields;
-  const loan = activeLoanFor(b.id);
-  const badge = loan ? `<span class="badge" style="background:var(--red)">Prestato</span>`
-    : f['Stato'] ? `<span class="badge" style="background:${STATO_COLORS[f['Stato']]||'var(--muted)'}">${esc(f['Stato'])}</span>` : '';
+function cardHTML(cat, o){
+  const f = o.fields;
+  let badge = '';
+  if(cat.biblio){
+    const loan = activeLoanFor(o.id);
+    badge = loan ? `<span class="badge" style="background:var(--red)">Prestato</span>`
+      : f['Stato'] ? `<span class="badge" style="background:${STATO_COLORS[f['Stato']]||'var(--muted)'}">${esc(f['Stato'])}</span>` : '';
+  } else if(f['Stato di conservazione']){
+    badge = `<span class="badge" style="background:${CONS_COLORS[f['Stato di conservazione']]||'var(--muted)'}">${esc(f['Stato di conservazione'])}</span>`;
+  }
   const stars = f['Valutazione'] ? `<div class="stars">${'★'.repeat(f['Valutazione'])}${'☆'.repeat(5-f['Valutazione'])}</div>` : '';
-  const cov = coverSrc(f);
-  const code = f['Codice'] ? `<span class="code">#${esc(f['Codice'])}</span>` : '';
-  return `<div class="book" onclick="openDetail('${b.id}')">
-    <div class="cover">${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}</div>
-    <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f['Autore']||'')}</div>${stars}</div>
+  const cov = coverSrc(cat, f);
+  const code = f['Codice'] ? `<span class="code">${esc(codeStr(cat,f))}</span>` : '';
+  const cbLabel = cat.label.split(',')[0].split(' e ')[0];
+  const cb = `<span class="catbadge">${cat.icon} ${esc(cbLabel)}</span>`;
+  return `<div class="book" onclick="openDetail('${cat.key}','${o.id}')">
+    <div class="cover">${cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
+    <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f[cat.sub]||'')}</div>${stars}</div>
   </div>`;
 }
 
 function renderWishlist(){
+  const cat = catByKey('libri');
   const list = books.filter(b => b.fields['Possesso']==='Desiderato');
-  document.getElementById('wishlist').innerHTML = list.map(cardHTML).join('');
+  document.getElementById('wishlist').innerHTML = list.map(b=>cardHTML(cat, b)).join('');
   document.getElementById('wishlist-empty').classList.toggle('hidden', list.length>0);
 }
 
@@ -455,22 +623,27 @@ function renderLoans(){
     ${past.length? `<table><tr><th>Libro</th><th>Prestato a</th><th>Dal</th><th>Previsto</th><th>Restituito il</th></tr>${past.map(row).join('')}</table>` : '<p class="note">Nessun prestito concluso.</p>'}`;
 }
 
+function collCount(id){ let n=0; for(const c of CAT) for(const o of (objs[c.key]||[])) if((o.fields['Collocazione']||[]).includes(id)) n++; return n; }
 function renderColls(){
   const wrap = document.getElementById('coll-list');
-  if(!colls.length){ wrap.innerHTML = '<div class="empty">Nessuna collocazione. Aggiungine una qui sopra (es. "Soggiorno · Libreria grande · Ripiano 3").</div>'; return; }
-  wrap.innerHTML = `<table><tr><th>Collocazione</th><th>Libri</th><th></th></tr>` + colls.map(c=>{
-    const n = books.filter(b=>(b.fields['Collocazione']||[]).includes(c.id)).length;
+  if(!colls.length){ wrap.innerHTML = '<div class="empty">Nessuna collocazione. Aggiungine una qui sopra (es. "Salone · Parete nord", "Caveau", "Deposito · Scaffale 3").</div>'; return; }
+  wrap.innerHTML = `<table><tr><th>Collocazione</th><th>Oggetti</th><th></th></tr>` + colls.map(c=>{
+    const n = collCount(c.id);
     return `<tr><td><b>${esc(c.fields['Nome']||'')}</b></td><td>${n}</td>
     <td>${n===0?`<button class="btn small danger" onclick="delCollocazione('${c.id}')">Elimina</button>`:''}</td></tr>`;
   }).join('')+`</table>`;
 }
 
-/* ================== DETTAGLIO LIBRO ================== */
-function openDetail(id){
+/* ================== DETTAGLIO ================== */
+function openDetail(catKey, id){
+  if(catKey!=='libri') return openObjDetail(catKey, id);
+  return openBookDetail(id);
+}
+function openBookDetail(id){
   const b = bookById(id); if(!b) return;
   const f = b.fields; const loan = activeLoanFor(id);
   const kv = [];
-  if(f['Codice']) kv.push(['Codice', '#'+f['Codice']]);
+  if(f['Codice']) kv.push(['Codice', codeStr(catByKey('libri'),f)]);
   if(f['Editore']) kv.push(['Editore', f['Editore']]);
   if(f['Anno']) kv.push(['Anno', f['Anno']]);
   if(f['ISBN']) kv.push(['ISBN', f['ISBN']]);
@@ -482,7 +655,7 @@ function openDetail(id){
   if(f['Data fine lettura']) kv.push(['Fine lettura', fmtDate(f['Data fine lettura'])]);
   if(f['Prezzo']!=null) kv.push(['Prezzo', '€ '+f['Prezzo']]);
   const isWish = f['Possesso']==='Desiderato';
-  const cov = coverSrc(f);
+  const cov = coverSrc(catByKey('libri'), f);
   modal(`
     <div class="detail">
       <div class="cover">${cov?`<img src="${esc(cov)}" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
@@ -499,9 +672,9 @@ function openDetail(id){
         ${(f['Tag']||[]).length?`<div style="margin-bottom:10px">${f['Tag'].map(t=>`<span class="pill" style="background:var(--muted); margin:0 4px 4px 0">${esc(t)}</span>`).join('')}</div>`:''}
         ${f['Descrizione']?`<p class="note" style="white-space:pre-wrap; max-height:180px; overflow-y:auto; margin-bottom:8px">${esc(f['Descrizione'])}</p>`:''}
         ${f['Note']?`<p class="note" style="white-space:pre-wrap">${esc(f['Note'])}</p>`:''}
-        ${(f['Scansioni']||[]).length?`<p class="note" style="margin-top:8px">📎 Scansioni: ${(f['Scansioni']||[]).map((a,i)=>`<a href="${esc(a.url)}" target="_blank">${i===0?'fronte':(i===1?'retro':'altra '+i)}</a>`).join(' · ')}</p>`:''}
       </div>
     </div>
+    ${mediaSection(catByKey('libri'), b)}
     <div class="modal-actions">
       <button class="btn danger small left" onclick="delBook('${id}')">Elimina</button>
       ${isWish?`<button class="btn" onclick="markPurchased('${id}')">🛒 Acquistato!</button>`:''}
@@ -584,6 +757,187 @@ async function delBook(id){
 async function markPurchased(id){
   try{ const j = await updateRec(TBL.libri, id, {'Possesso':'Posseduto','Stato':'Da leggere'});
     const i = books.findIndex(b=>b.id===id); books[i]=j; closeModal(); renderAll(); toast('🎉 Aggiunto alla biblioteca!');
+  }catch(e){ toast(e.message); }
+}
+
+/* ================== SCHEDA GENERICA (oggetti d'arte) ================== */
+function fmtCur(v){ return '€ ' + Number(v).toLocaleString('it-IT',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function openObjDetail(catKey, id){
+  const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
+  const f = o.fields;
+  const kv = [];
+  for(const fld of cat.campi){
+    if(fld.k==='Note' || fld.k==='Stato di conservazione') continue;   // note in fondo, stato come pill
+    let v = f[fld.k];
+    if(v===undefined || v===null || v==='') continue;
+    if(fld.t==='date') v = fmtDate(v);
+    else if(fld.t==='cur') v = fmtCur(v);
+    else if(fld.t==='num' && /cm$/.test(fld.k)) v = v + ' cm';
+    kv.push([fld.l, v]);
+  }
+  if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
+  const cov = coverSrc(cat, f);
+  const consBadge = f['Stato di conservazione']
+    ? `<span class="pill" style="background:${CONS_COLORS[f['Stato di conservazione']]||'var(--muted)'}">${esc(f['Stato di conservazione'])}</span>` : '';
+  modal(`
+    <div class="detail">
+      <div class="cover">${cov?`<img src="${esc(cov)}" onclick="lightbox('${esc(cov)}')" style="cursor:zoom-in" onerror="this.remove()">`:`<div class="noimg">${esc(f['Titolo']||'')}</div>`}</div>
+      <div class="meta">
+        <div class="note" style="margin-bottom:2px">${cat.icon} ${esc(cat.label)} · <b>${esc(codeStr(cat,f))}</b></div>
+        <h2>${esc(f['Titolo']||'')}</h2>
+        <div class="auth">${esc(f[cat.sub]||'')}</div>
+        <div style="margin:8px 0 2px">${consBadge}</div>
+        <dl class="kv">${kv.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
+        ${f['Note']?`<p class="note" style="white-space:pre-wrap; margin-top:6px">${esc(f['Note'])}</p>`:''}
+      </div>
+    </div>
+    ${mediaSection(cat, o)}
+    <div class="modal-actions">
+      <button class="btn danger small left" onclick="delObj('${cat.key}','${id}')">Elimina</button>
+      <button class="btn secondary" onclick="openObjForm('${cat.key}','${id}')">✏️ Modifica</button>
+      <button class="btn" onclick="closeModal()">Chiudi</button>
+    </div>`);
+}
+
+function openObjForm(catKey, id){
+  const cat = catByKey(catKey);
+  const o = id ? objById(catKey, id) : null;
+  const f = o ? o.fields : {};
+  const campo = fld => {
+    const val = f[fld.k];
+    const full = fld.full ? ' style="grid-column:1/-1"' : '';
+    const idA = 'of-' + cssId(fld.k);
+    let inner;
+    if(fld.t==='area') inner = `<textarea id="${idA}">${esc(val||'')}</textarea>`;
+    else if(fld.t==='sel') inner = `<select id="${idA}"><option value=""></option>${fld.ch.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+    else if(fld.t==='num') inner = `<input id="${idA}" type="number" step="any" value="${val??''}">`;
+    else if(fld.t==='date') inner = `<input id="${idA}" type="date" value="${val||''}">`;
+    else if(fld.t==='cur') inner = `<input id="${idA}" type="number" step="0.01" value="${val??''}">`;
+    else inner = `<input id="${idA}" value="${escAttr(val||'')}">`;
+    return `<div class="field"${full}><label>${esc(fld.l)}</label>${inner}</div>`;
+  };
+  modal(`
+    <h2>${o?'Modifica':'Nuovo'} — ${esc(cat.label)}</h2>
+    <div class="frow">
+      <div class="field"><label>Codice di catalogo</label>
+        <input value="${o?esc(codeStr(cat,f)):''}" readonly placeholder="${o?'—':cat.prefix+'- (al salvataggio)'}"
+               title="Assegnato automaticamente dall'app. Non modificabile."></div>
+      <div class="field" style="grid-column:1/-1"><label>Titolo / denominazione *</label><input id="of-titolo" value="${escAttr(f['Titolo']||'')}"></div>
+      ${cat.campi.filter(x=>x.k!=='Note').map(campo).join('')}
+      <div class="field"><label>Collocazione</label><select id="of-coll"><option value=""></option>${colls.map(c=>`<option value="${c.id}" ${(f['Collocazione']||[]).includes(c.id)?'selected':''}>${esc(c.fields['Nome']||'')}</option>`).join('')}</select></div>
+      <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="of-note">${esc(f['Note']||'')}</textarea></div>
+    </div>
+    <p class="note">${o?'':'📷 Dopo il salvataggio si apre la scheda per aggiungere fotografie e documenti.'}</p>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="saveObj('${cat.key}',${o?`'${id}'`:'null'})">💾 Salva</button>
+    </div>`);
+}
+
+async function saveObj(catKey, id){
+  const cat = catByKey(catKey);
+  const g = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
+  const titolo = g('of-titolo');
+  if(!titolo){ toast('Il titolo è obbligatorio'); return; }
+  const fields = { 'Titolo': titolo };
+  for(const fld of cat.campi){
+    if(fld.k==='Note') continue;
+    const raw = g('of-' + cssId(fld.k));
+    if(fld.t==='num' || fld.t==='cur') fields[fld.k] = raw!=='' ? Number(raw) : null;
+    else fields[fld.k] = raw || null;
+  }
+  const collSel = g('of-coll');
+  fields['Collocazione'] = collSel ? [collSel] : [];
+  fields['Note'] = (document.getElementById('of-note')||{}).value || '';
+  try{
+    if(id){
+      const j = await updateRec(cat.tbl, id, fields);
+      patchRec(catKey, id, j);
+      closeModal(); fillFilters(); renderAll(); toast('💾 Scheda salvata');
+    } else {
+      const [rec] = await creaInTabella(cat.tbl, [fields]);
+      objs[catKey].push(rec);
+      fillFilters(); renderAll();
+      toast('✅ Scheda creata — ora aggiungi le fotografie');
+      openObjDetail(catKey, rec.id);
+    }
+  }catch(e){ toast(e.message); }
+}
+
+async function delObj(catKey, id){
+  const cat = catByKey(catKey);
+  if(!confirm('Eliminare definitivamente questo oggetto dal catalogo?')) return;
+  try{
+    await deleteRec(cat.tbl, id);
+    const arr = objs[catKey]; const i = arr.findIndex(x=>x.id===id); if(i>=0) arr.splice(i,1);
+    closeModal(); renderAll(); toast('Oggetto eliminato');
+  }catch(e){ toast(e.message); }
+}
+
+/* ---- sezione fotografica e documentale (comune a tutte le categorie) ---- */
+function mediaSection(cat, o){
+  const f = o.fields;
+  const fotos = f[cat.foto] || [];
+  const docs = f['Documenti'] || [];
+  const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
+  const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
+    + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
+  const gallery = fotos.map(ph).join('')
+    + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
+  const docItems = docs.map(a => `<li>📄 <a href="${esc(a.url)}" target="_blank">${esc(a.filename||'documento')}</a>`
+    + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','Documenti','${a.id}')">🗑</button></li>`).join('');
+  const hint = cat.key==='libri' ? '' : ' — consigliate: fronte, retro, dettaglio della firma';
+  return `
+    <div class="seclabel">Fotografie${hint}</div>
+    <div class="gallery">${gallery}</div>
+    <div class="seclabel">Documenti — perizie, certificati, fatture</div>
+    <ul class="doclist">${docItems || '<li style="border:none; color:var(--muted)">Nessun documento allegato.</li>'}</ul>
+    <button class="btn secondary small" onclick="aggiungiDoc('${cat.key}','${o.id}')">＋ Aggiungi documento (immagine o PDF)</button>`;
+}
+function lightbox(url){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${esc(url)}">`; document.body.appendChild(d); }
+function patchRec(catKey, id, rec){ const arr=objs[catKey]; const i=arr.findIndex(x=>x.id===id); if(i>=0) arr[i]=rec; }
+function patchFields(catKey, id, fields){ const o=objById(catKey,id); if(o) o.fields=fields; }
+function refreshDetail(catKey, id){ if(catKey==='libri') openBookDetail(id); else openObjDetail(catKey, id); renderCatalog(); renderTiles(); }
+function pickFiles(accept, cb){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept=accept; inp.multiple=true;
+  inp.onchange=()=>{ if(inp.files.length) cb([...inp.files]); };
+  inp.click();
+}
+async function aggiungiFoto(catKey, id){
+  const cat = catByKey(catKey);
+  pickFiles('image/*', async files=>{
+    toast(`Carico ${files.length} foto…`);
+    for(const file of files){
+      try{ const c = await fileToCanvas(file, 1800); const upd = await uploadScan(id, c, file.name, cat.foto);
+        if(upd && upd.fields) patchFields(catKey, id, upd.fields);
+      }catch(e){ toast('Foto '+file.name+': '+e.message); }
+    }
+    refreshDetail(catKey, id); toast('📷 Fotografie aggiornate');
+  });
+}
+async function aggiungiDoc(catKey, id){
+  pickFiles('image/*,.pdf,application/pdf', async files=>{
+    toast(`Carico ${files.length} documento/i…`);
+    for(const file of files){
+      try{
+        let upd;
+        if(isPDF(file)) upd = await uploadFile(id, 'Documenti', file);
+        else { const c = await fileToCanvas(file, 2200); upd = await uploadScan(id, c, file.name, 'Documenti'); }
+        if(upd && upd.fields) patchFields(catKey, id, upd.fields);
+      }catch(e){ toast('Doc '+file.name+': '+e.message); }
+    }
+    refreshDetail(catKey, id); toast('📎 Documenti aggiornati');
+  });
+}
+async function rimuoviAllegato(catKey, id, field, attId){
+  const o = objById(catKey, id) || (catKey==='libri' && bookById(id)); if(!o) return;
+  if(!confirm('Rimuovere questo allegato?')) return;
+  const restanti = (o.fields[field]||[]).filter(a=>a.id!==attId).map(a=>({id:a.id}));
+  try{
+    const j = await updateRec(catByKey(catKey).tbl, id, {[field]: restanti});
+    patchRec(catKey, id, j);
+    refreshDetail(catKey, id);
   }catch(e){ toast(e.message); }
 }
 
@@ -912,15 +1266,27 @@ async function ocrBlurb(canvas){
 }
 
 /* upload di una scansione come allegato Airtable (campo "Scansioni") */
-async function uploadScan(recordId, canvas, filename){
+async function uploadScan(recordId, canvas, filename, field){
   const {token, base} = cfg();
   const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
-  const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent('Scansioni')}/uploadAttachment`,{
+  const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent(field||'Scansioni')}/uploadAttachment`,{
     method:'POST',
     headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
     body: JSON.stringify({ contentType:'image/jpeg', file: base64, filename: (filename||'scan').replace(/\.(jpe?g|png|gif|webp|tiff?|bmp|heic|pdf)$/i,'')+'.jpg' })
   });
-  if(!res.ok){ let m='Upload scansione fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
+  if(!res.ok){ let m='Upload allegato fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
+  return res.json();
+}
+/* upload di un file grezzo (per i documenti: PDF o immagini non ricompresse) */
+async function uploadFile(recordId, field, file){
+  const {token, base} = cfg();
+  const base64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('file non leggibile')); r.readAsDataURL(file); });
+  const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent(field)}/uploadAttachment`,{
+    method:'POST',
+    headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ contentType: file.type||'application/octet-stream', file: base64, filename: file.name||'documento' })
+  });
+  if(!res.ok){ let m='Upload documento fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
   return res.json();
 }
 
@@ -1074,7 +1440,7 @@ async function importCSV(){
     recs.forEach(r => r.fields['Codice'] = ++n);
     for(let i=0;i<recs.length;i+=10){
       const j = await createMany(TBL.libri, recs.slice(i,i+10));
-      books = books.concat(j.records); done += j.records.length;
+      books.push(...j.records); done += j.records.length;
       st.textContent = `Importati ${done}/${recs.length}…`;
       await new Promise(r=>setTimeout(r,250));
     }
@@ -1138,11 +1504,12 @@ async function delCollocazione(id){
 
 /* ================== UTILS ================== */
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function coverSrc(f){
-  const a = (f['Scansioni']||[])[0];
+function coverSrc(cat, f){
+  const a = (f[cat.foto]||[])[0];
   if(a){ const t=a.thumbnails; return (t && t.large && t.large.url) || a.url || ''; }
-  return f['Copertina']||'';
+  return cat.biblio ? (f['Copertina']||'') : '';
 }
+function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
 function modal(html){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
