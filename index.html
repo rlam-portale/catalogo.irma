@@ -560,7 +560,16 @@ async function testConnection(goCatalog){
     await api(`${encodeURIComponent(TBL.libri)}?maxRecords=1`);
     st.innerHTML = '✅ Connessione riuscita!';
     if(goCatalog){ loaded=false; show('catalogo'); }
-  }catch(e){ st.innerHTML = '❌ ' + e.message; }
+  }catch(e){
+    let extra = '';
+    const tok = (store('bib_token')||'');
+    if(String(e.message).includes('401')){
+      extra = ` <span style="color:var(--muted)">— token di ${tok.length} caratteri`
+        + (tok.length < 60 ? ': sembra <b>incompleto</b> (un token Airtable ne ha ~82, con un punto in mezzo). Ricopialo per intero.' : '. Verifica che sia corretto/non scaduto.')
+        + '</span>';
+    }
+    st.innerHTML = '❌ ' + e.message + extra;
+  }
 }
 
 /* ================== RENDER ================== */
