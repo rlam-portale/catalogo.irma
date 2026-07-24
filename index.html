@@ -285,7 +285,8 @@ const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fanta
 
 /* stato di conservazione: comune agli oggetti d'arte */
 const STATI_CONS = ['Ottimo','Buono','Discreto','Da restaurare','Restaurato'];
-const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Da restaurare':'var(--red)','Restaurato':'var(--blue)'};
+const STATI_CONS_MOBILI = ['Ottimo','Buono','Discreto','Con tarli','Da restaurare','Restaurato'];
+const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Con tarli':'#a56a2b','Da restaurare':'var(--red)','Restaurato':'var(--blue)'};
 
 /* Descrittore campo per schede/form generici:
    {k:nome campo Airtable, l:etichetta, t:tipo, ch:[scelte], full:larghezza piena}
@@ -323,11 +324,25 @@ const CAMPI = {
     {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
   ],
   mobili: [
-    {k:'Tipologia', l:'Tipologia'}, {k:'Epoca e stile', l:'Epoca e stile'},
-    {k:'Essenza', l:'Essenza / materiale'},
+    {k:'Ambiente', l:'Ambiente'},
+    {k:'Epoca', l:'Epoca / datazione'},
+    {k:'Stile e manifattura', l:'Stile / manifattura'},
+    {k:'Materiali', l:'Materiali'},
     {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Larghezza cm', l:'Larghezza (cm)', t:'num'}, {k:'Profondità cm', l:'Profondità (cm)', t:'num'},
-    {k:'Restauri', l:'Restauri', t:'area', full:1},
-    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
+    {k:'Caratteristiche', l:'Caratteristiche', t:'area', full:1},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS_MOBILI},
+    {k:'Interventi di restauro', l:'Interventi di restauro', t:'area', full:1}
+  ],
+  accessori: [
+    {k:'Categoria', l:'Categoria', t:'sel', ch:['Illuminazione','Tessile','Decorazione','Vasellame','Specchi','Orologi','Complemento d\'arredo','Altro']},
+    {k:'Stile e epoca', l:'Stile / epoca'},
+    {k:'Materiale principale', l:'Materiale principale'},
+    {k:'Colore e finitura', l:'Colore / finitura'},
+    {k:'Altezza cm', l:'Altezza (cm)', t:'num'}, {k:'Larghezza cm', l:'Larghezza (cm)', t:'num'}, {k:'Profondità cm', l:'Profondità (cm)', t:'num'},
+    {k:'Peso kg', l:'Peso (kg)', t:'num'},
+    {k:'Stato di conservazione', l:'Condizioni', t:'sel', ch:STATI_CONS},
+    {k:'Ambiente', l:'Ambiente / collocazione in casa'},
+    {k:'Datazione', l:'Anno / datazione'}
   ],
   ceramiche: [
     {k:'Manifattura', l:'Manifattura'}, {k:'Marchio', l:'Marchio', t:'area', full:1},
@@ -357,7 +372,8 @@ const CAT = [
   {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri},
   {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti},
   {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture},
-  {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Tipologia',    foto:'Foto', campi:CAMPI.mobili},
+  {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili},
+  {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
   {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche}
 ];
 const catByKey = k => CAT.find(c=>c.key===k);
@@ -780,6 +796,7 @@ function openObjDetail(catKey, id){
     if(fld.t==='date') disp = fmtDate(v);
     else if(fld.t==='cur') disp = fmtCur(v);
     else if(fld.t==='num' && /cm$/.test(fld.k)) disp = v + ' cm';
+    else if(fld.t==='num' && /kg$/.test(fld.k)) disp = v + ' kg';
     kv.push([fld.l, disp]);
   }
   if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
@@ -824,6 +841,7 @@ async function stampaScheda(catKey, id){
     if(fld.t==='date') disp = fmtDate(v);
     else if(fld.t==='cur') disp = fmtCur(v);
     else if(fld.t==='num' && /cm$/.test(fld.k)) disp = v + ' cm';
+    else if(fld.t==='num' && /kg$/.test(fld.k)) disp = v + ' kg';
     rows.push([fld.l, String(disp)]);
   }
   if((f['Collocazione']||[]).length) rows.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
