@@ -809,8 +809,9 @@ function openObjDetail(catKey, id){
     </div>`, true);
 }
 
-/* scheda stampabile in PDF (via finestra di stampa del browser), con timbro di proprietà */
-function stampaScheda(catKey, id){
+/* PDF vero della scheda (jsPDF): testata + piede con numero di pagina ripetuti
+   su ogni pagina, immagine incorporata, timbro rotondo di proprietà sull'ultima. */
+async function stampaScheda(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
   const f = o.fields;
   const rows = [], blocks = [];
@@ -818,72 +819,105 @@ function stampaScheda(catKey, id){
   for(const fld of cat.campi){
     if(fld.k==='Stato di conservazione') continue;
     const v = f[fld.k]; if(v===undefined || v===null || v==='') continue;
-    if(fld.t==='area'){ blocks.push([fld.l, v]); continue; }
+    if(fld.t==='area'){ blocks.push([fld.l, String(v)]); continue; }
     let disp = v;
     if(fld.t==='date') disp = fmtDate(v);
     else if(fld.t==='cur') disp = fmtCur(v);
     else if(fld.t==='num' && /cm$/.test(fld.k)) disp = v + ' cm';
-    rows.push([fld.l, disp]);
+    rows.push([fld.l, String(disp)]);
   }
   if((f['Collocazione']||[]).length) rows.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
-  const a = (f[cat.foto]||[])[0]; const pimg = a ? (a.url||'') : '';
+  const code = codeStr(cat, f), titolo = f['Titolo']||'', autore = f[cat.sub]||'';
+
+  // incorpora la foto (host Airtable con CORS aperto → canvas non "tainted")
+  const att = (f[cat.foto]||[])[0];
+  toast('Preparo il PDF…');
+  let imgData=null, iw=0, ih=0;
+  if(att && att.url){
+    try{
+      const im = await new Promise((res,rej)=>{ const x=new Image(); x.crossOrigin='anonymous'; x.onload=()=>res(x); x.onerror=()=>rej(new Error('img')); x.src=att.url; });
+      const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight;
+      c.getContext('2d').drawImage(im,0,0);
+      imgData=c.toDataURL('image/jpeg',0.92); iw=im.naturalWidth; ih=im.naturalHeight;
+    }catch(e){ imgData=null; }
+  }
+  try{ await loadScript(CDN.jspdf); }catch(e){ toast('Impossibile caricare il generatore PDF'); return; }
+  const JS = (window.jspdf||{}).jsPDF; if(!JS){ toast('Generatore PDF non disponibile'); return; }
+
+  const doc = new JS({unit:'mm', format:'a4'});
+  const W=210, M=16, CW=W-2*M, TOP=27, BOT=270;
   const oggi = new Date().toLocaleDateString('it-IT', {day:'2-digit', month:'long', year:'numeric'});
-  const rowsHTML = rows.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join('');
-  const blocksHTML = blocks.map(([k,v])=>`<div class="blk"><div class="bl">${esc(k)}</div><div class="bt">${esc(String(v)).replace(/\n/g,'<br>')}</div></div>`).join('');
-  const html = `<!doctype html><html lang="it"><head><meta charset="utf-8">
-<title>${esc(codeStr(cat,f))} — ${esc(f['Titolo']||'')}</title>
-<style>
-  @page{ size:A4; margin:16mm }
-  *{box-sizing:border-box}
-  body{ font-family:Georgia,'Times New Roman',serif; color:#241f18; margin:0; font-size:11.5pt; line-height:1.5 }
-  .head{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #6f4a27; padding-bottom:6px; margin-bottom:14px }
-  .brand{ font-size:15pt; letter-spacing:3px; color:#6f4a27; text-transform:uppercase; font-weight:bold }
-  .brand small{ display:block; font-size:8pt; letter-spacing:2px; color:#8a7f70; font-weight:normal }
-  .code{ font-size:16pt; font-weight:bold; color:#6f4a27 }
-  h1{ font-size:20pt; margin:4px 0 2px }
-  .auth{ color:#6b6155; font-style:italic; margin-bottom:12px }
-  .row{ display:flex; gap:12mm; align-items:flex-start }
-  .photo{ flex:0 0 auto }
-  .photo img{ max-width:78mm; max-height:108mm; border:1px solid #ddd6c8 }
-  table{ border-collapse:collapse; width:100%; font-size:10.5pt }
-  th,td{ text-align:left; vertical-align:top; padding:3px 8px 3px 0; border-bottom:1px solid #eee5d6 }
-  th{ color:#8a7f70; font-weight:normal; width:44%; white-space:nowrap }
-  .blk{ margin-top:12px; break-inside:avoid }
-  .bl{ font-size:8.5pt; text-transform:uppercase; letter-spacing:1px; color:#8a7f70; border-bottom:1px solid #eee5d6; padding-bottom:2px; margin-bottom:4px }
-  .bt{ font-size:10.5pt; text-align:justify }
-  .foot{ display:flex; justify-content:space-between; align-items:flex-end; margin-top:64px }
-  .mf{ font-size:8.5pt; color:#8a7f70 }
-  .timbro{ width:27mm; height:27mm; border:1.8px solid #2f6fb3; border-radius:50%; color:#2f6fb3; transform:rotate(-7deg);
-    display:flex; align-items:center; justify-content:center; text-align:center; opacity:.9; margin-bottom:2mm;
-    box-shadow:inset 0 0 0 2px #fff, inset 0 0 0 3px #2f6fb3 }
-  .timbro .t1{ font-size:5pt; letter-spacing:1.2px }
-  .timbro .t2{ font-size:9pt; font-weight:bold; line-height:1.05; letter-spacing:.8px; margin:1px 0 }
-  .timbro .t3{ font-size:6.5pt; letter-spacing:1.8px }
-</style></head><body>
-  <div class="head">
-    <div class="brand">Catalogo Dajlani<small>Arezzo</small></div>
-    <div class="code">${esc(codeStr(cat,f))}</div>
-  </div>
-  <h1>${esc(f['Titolo']||'')}</h1>
-  <div class="auth">${esc(f[cat.sub]||'')}</div>
-  <div class="row">
-    ${pimg?`<div class="photo"><img src="${esc(pimg)}" id="pimg"></div>`:''}
-    <table>${rowsHTML}</table>
-  </div>
-  ${blocksHTML}
-  <div class="foot">
-    <div class="mf">Scheda generata il ${esc(oggi)}<br>Catalogo Dajlani Arezzo</div>
-    <div class="timbro"><div><div class="t1">✦ PROPRIETÀ ✦</div><div class="t2">IRMA<br>DAJLANI</div><div class="t3">AREZZO</div></div></div>
-  </div>
-  <script>
-    (function(){ var done=false; function go(){ if(done)return; done=true; try{window.focus();}catch(e){} window.print(); }
-      var im=document.getElementById('pimg');
-      if(im && !im.complete){ im.onload=go; im.onerror=go; setTimeout(go,2500); } else { setTimeout(go,300); } })();
-  <\/script>
-</body></html>`;
-  const w = window.open('', '_blank');
-  if(!w){ toast('Consenti i popup del browser per stampare la scheda'); return; }
-  w.document.open(); w.document.write(html); w.document.close();
+  const brown=[111,74,39], muted=[138,127,112], ink=[36,31,24], blue=[47,111,179], line=[228,219,203];
+  const header = ()=>{
+    doc.setFont('times','bold'); doc.setFontSize(13); doc.setTextColor(brown[0],brown[1],brown[2]); doc.setCharSpace(0.7);
+    doc.text('CATALOGO DAJLANI AREZZO', M, 15); doc.setCharSpace(0);
+    doc.setFontSize(12); doc.text(code, W-M, 15, {align:'right'});
+    doc.setDrawColor(brown[0],brown[1],brown[2]); doc.setLineWidth(0.5); doc.line(M, 18.5, W-M, 18.5);
+  };
+  let y=TOP;
+  const ensure = h => { if(y+h>BOT){ doc.addPage(); header(); y=TOP; } };
+  header();
+
+  // titolo + autore
+  doc.setFont('times','bold'); doc.setFontSize(19); doc.setTextColor(ink[0],ink[1],ink[2]);
+  doc.splitTextToSize(titolo, CW).forEach(l=>{ ensure(8); doc.text(l, M, y+6); y+=8; });
+  if(autore){ doc.setFont('times','italic'); doc.setFontSize(12); doc.setTextColor(muted[0],muted[1],muted[2]); ensure(6); doc.text(autore, M, y+4); y+=8; } else { y+=2; }
+
+  // immagine (a sinistra) + tabella campi (a destra)
+  let dw=0, dh=0;
+  if(imgData){ dw=72; dh=dw*ih/iw; if(dh>104){ dh=104; dw=dh*iw/ih; } doc.addImage(imgData,'JPEG', M, y, dw, dh); }
+  const tx = imgData ? M+dw+9 : M, tw = imgData ? CW-dw-9 : CW, vx = tx + tw*0.42, vw = tw*0.56;
+  let ty = y;
+  doc.setFont('times','normal'); doc.setFontSize(10);
+  rows.forEach(([k,v])=>{
+    const vl = doc.splitTextToSize(String(v), vw);
+    const rh = Math.max(6, vl.length*4.6 + 1.6);
+    doc.setTextColor(muted[0],muted[1],muted[2]); doc.text(k, tx, ty+4.4);
+    doc.setTextColor(ink[0],ink[1],ink[2]); doc.text(vl, vx, ty+4.4);
+    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.2); doc.line(tx, ty+rh, tx+tw, ty+rh);
+    ty += rh;
+  });
+  y = Math.max(y+dh, ty) + 9;
+
+  // sezioni a testo lungo (biografia, soggetto, provenienza, note…) con a-capo di pagina
+  blocks.forEach(([k,v])=>{
+    ensure(11);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(muted[0],muted[1],muted[2]); doc.setCharSpace(0.4);
+    doc.text(String(k).toUpperCase(), M, y+3); doc.setCharSpace(0);
+    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.2); doc.line(M, y+4.6, W-M, y+4.6);
+    y += 8;
+    doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(ink[0],ink[1],ink[2]);
+    doc.splitTextToSize(String(v).replace(/\r/g,''), CW).forEach(l=>{ ensure(5); doc.text(l, M, y+3.6); y+=5; });
+    y += 5;
+  });
+
+  // timbro rotondo di proprietà sull'ultima pagina, in basso a destra
+  if(y+40 > BOT){ doc.addPage(); header(); y=TOP; }
+  const cx=W-M-16, cy=250, r=15;
+  doc.setDrawColor(blue[0],blue[1],blue[2]);
+  doc.setLineWidth(0.7); doc.circle(cx,cy,r,'S');
+  doc.setLineWidth(0.4); doc.circle(cx,cy,r-1.6,'S');
+  doc.setTextColor(blue[0],blue[1],blue[2]);
+  doc.setFont('times','normal'); doc.setFontSize(6.5); doc.setCharSpace(0.5);
+  doc.text('PROPRIETÀ', cx, cy-6.5, {align:'center'}); doc.setCharSpace(0);
+  doc.setFont('times','bold'); doc.setFontSize(11);
+  doc.text('IRMA', cx, cy-0.5, {align:'center'});
+  doc.text('DAJLANI', cx, cy+4.6, {align:'center'});
+  doc.setFont('times','normal'); doc.setFontSize(7.5); doc.setCharSpace(1.2);
+  doc.text('AREZZO', cx, cy+10.2, {align:'center'}); doc.setCharSpace(0);
+
+  // piede con numerazione, ripetuto su tutte le pagine
+  const total = doc.getNumberOfPages();
+  for(let i=1;i<=total;i++){
+    doc.setPage(i);
+    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.3); doc.line(M, 283, W-M, 283);
+    doc.setFont('times','normal'); doc.setFontSize(8.5); doc.setTextColor(muted[0],muted[1],muted[2]);
+    doc.text('Catalogo Dajlani Arezzo · scheda generata il '+oggi, M, 289);
+    doc.text('Pagina '+i+' di '+total, W-M, 289, {align:'right'});
+  }
+  const safe = (code+' '+titolo).replace(/[^\w\-À-ſ ]/g,'').trim().slice(0,60) || 'scheda';
+  doc.save(safe+'.pdf');
+  toast('📄 PDF generato');
 }
 
 function openObjForm(catKey, id){
@@ -1366,7 +1400,8 @@ const CDN = {
   zxing: 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js',
   tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
   pdfjs: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
-  pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+  pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+  jspdf: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js'
 };
 const loadedScripts = {};
 function loadScript(src){
