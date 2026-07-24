@@ -1755,50 +1755,62 @@ function mbToFields(r, barcode){
 /* --- Discogs: copertura migliore per i supporti fisici (token nelle Impostazioni) --- */
 function getDiscogsToken(){ return (store('discogs_token')||'').trim(); }
 function stripArtistN(s){ return (s||'').replace(/\s*\(\d+\)$/,'').trim(); }
-function mapFormatoDiscogs(formats){
-  const f = (formats&&formats[0])||{}; const name = (f.name||'').toLowerCase();
-  if(name.includes('vinyl')) return 'Vinile';
-  if(name.includes('cd')) return 'CD';
-  if(name.includes('cassette')) return 'Cassetta';
+function mapFormatoDiscogsStr(formatArr){
+  const s = (formatArr||[]).join(' ').toLowerCase();
+  if(s.includes('vinyl')) return 'Vinile';
+  if(s.includes('cd')) return 'CD';
+  if(s.includes('cassette')) return 'Cassetta';
   return '';
 }
-function discogsToFields(rel, bc){
-  const art = (rel.artists||[]).map(a=>stripArtistN(a.name)).filter(Boolean).join(', ');
-  const li = (rel.labels||[])[0]||{};
-  const gen = [...(rel.genres||[]), ...(rel.styles||[])];
-  const tracks = (rel.tracklist||[]).filter(t=>t.title && t.type_!=='heading')
-    .map(t=>(t.position? t.position+'. ':'')+t.title);
-  const bar = (rel.identifiers||[]).find(i=>(i.type||'').toLowerCase()==='barcode');
+/* Usa il RISULTATO della search Discogs: l'endpoint /releases è bloccato da CORS
+   nel browser, mentre /database/search invia gli header CORS. La search contiene
+   già titolo, artista, etichetta, anno, formato, genere, paese, catalogo, barcode
+   (la tracklist arriva da MusicBrainz, se disponibile). */
+function discogsSearchToFields(hit, bc){
+  const parti = (hit.title||'').split(' - ');
+  const artista = parti.length>1 ? stripArtistN(parti[0]) : '';
+  const titolo  = parti.length>1 ? parti.slice(1).join(' - ').trim() : (hit.title||'');
+  const gen = [...(hit.genre||[]), ...(hit.style||[])];
+  const barr = (hit.barcode||[]).map(x=>String(x).replace(/\s+/g,'')).find(x=>/^\d{8,}$/.test(x));
   return {
-    'Titolo': rel.title||'',
-    'Artista': art,
-    'Tipologia supporto': mapFormatoDiscogs(rel.formats),
-    'Anno di rilascio': rel.year? String(rel.year):'',
+    'Titolo': titolo,
+    'Artista': artista,
+    'Tipologia supporto': mapFormatoDiscogsStr(hit.format),
+    'Anno di rilascio': hit.year? String(hit.year):'',
     'Genere musicale': gen.join(', '),
-    'Etichetta': li.name||'',
-    'Codice di catalogo': li.catno||'',
-    'Paese di stampa': PAESI[rel.country] || rel.country || '',
-    'Codice a barre': (bar&&bar.value)? bar.value.replace(/\s+/g,'') : (bc||''),
-    'Tracklist': tracks.join('\n'),
+    'Etichetta': (hit.label||[])[0] || '',
+    'Codice di catalogo': hit.catno || '',
+    'Paese di stampa': PAESI[hit.country] || hit.country || '',
+    'Codice a barre': barr || bc || '',
+    'Tracklist': '',
     'Note': 'ℹ️ Dati recuperati da Discogs: verifica edizione, anno e stato di conservazione.'
   };
 }
 async function discogsByBarcode(bc){
   const token = getDiscogsToken(); if(!token) return null;
-  const s = await fetch('https://api.discogs.com/database/search?type=release&barcode='+encodeURIComponent(bc)+'&per_page=5&token='+encodeURIComponent(token));
-  if(!s.ok) return null;
-  const sj = await s.json();
-  const hit = (sj.results||[]).find(r=>r.id);
+  const r = await fetch('https://api.discogs.com/database/search?type=release&barcode='+encodeURIComponent(bc)+'&per_page=5&token='+encodeURIComponent(token));
+  if(!r.ok) return null;
+  const j = await r.json();
+  const hit = (j.results||[]).find(x=>x.title);
   if(!hit) return null;
-  const d = await fetch('https://api.discogs.com/releases/'+hit.id+'?token='+encodeURIComponent(token));
-  if(!d.ok) return null;
-  return discogsToFields(await d.json(), bc);
+  return discogsSearchToFields(hit, bc);
 }
-/* Ricerca da barcode: Discogs (se token) poi MusicBrainz. Ritorna {data,fonte} o null. */
+/* Ricerca da barcode: Discogs (search, se token) per i dati + MusicBrainz per la
+   tracklist; ripiego completo su MusicBrainz se Discogs non trova nulla. */
 async function lookupByBarcode(bc){
-  try{ const dg = await discogsByBarcode(bc); if(dg && (dg['Titolo']||dg['Artista'])) return {data:dg, fonte:'Discogs'}; }catch(e){}
-  let releases = []; try{ releases = await mbSearchRelease('barcode:'+bc); }catch(e){}
-  if(releases.length){ let r = releases[0]; try{ r = await mbRelease(r.id); }catch(e){} return {data:mbToFields(r,bc), fonte:'MusicBrainz'}; }
+  let dg = null;
+  try{ dg = await discogsByBarcode(bc); }catch(e){}
+  let mb = null;
+  try{
+    const releases = await mbSearchRelease('barcode:'+bc);
+    if(releases.length){ let r = releases[0]; try{ r = await mbRelease(r.id); }catch(e){} mb = mbToFields(r, bc); }
+  }catch(e){}
+  if(dg && (dg['Titolo']||dg['Artista'])){
+    let fonte = 'Discogs';
+    if(!dg['Tracklist'] && mb && mb['Tracklist']){ dg['Tracklist'] = mb['Tracklist']; fonte = 'Discogs + MusicBrainz'; }
+    return { data: dg, fonte };
+  }
+  if(mb && (mb['Titolo']||mb['Artista'])) return { data: mb, fonte: 'MusicBrainz' };
   return null;
 }
 async function cercaDaBarcode(){
