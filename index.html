@@ -548,6 +548,13 @@ function saveConfig(){
 }
 async function testConnection(goCatalog){
   const st = document.getElementById('cfg-status');
+  // Usa sempre i valori attualmente nei campi (evita di testare un token vecchio)
+  const tf = (document.getElementById('cfg-token')||{}).value;
+  const bf = (document.getElementById('cfg-base')||{}).value;
+  if(tf && tf.trim()) store('bib_token', tf.trim());
+  if(bf && bf.trim()) store('bib_base', bf.trim());
+  const df = (document.getElementById('cfg-discogs')||{}).value;
+  if(df !== undefined) store('discogs_token', (df||'').trim());
   st.textContent = 'Verifico…';
   try{
     await api(`${encodeURIComponent(TBL.libri)}?maxRecords=1`);
