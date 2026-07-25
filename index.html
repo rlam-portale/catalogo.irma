@@ -223,10 +223,10 @@
     </div>
     <div id="add-musica" class="setupbox hidden" style="margin-top:14px; max-width:680px">
       <h2>💿 Aggiungi supporto musicale</h2>
-      <p>Recupero i dati dai database musicali (<b>Discogs</b> e <b>MusicBrainz</b>) partendo dal <b>codice a barre</b>. Puoi digitarlo qui sotto, oppure caricare una foto della copertina/retro e provo a leggerlo (con ripiego sull'OCR della copertina). Poi verifichi e salvi.</p>
+      <p>Recupero i dati dai database musicali (<b>Discogs</b> e <b>MusicBrainz</b>) dal <b>codice a barre</b> oppure dal <b>numero di catalogo</b> dell'etichetta (utile per i vinili vecchi senza barcode, es. <i>206 285-620</i>). In alternativa carica una foto e provo a leggere il barcode (con ripiego sull'OCR). Poi verifichi e salvi.</p>
       <div class="isbnrow">
-        <input type="text" id="mus-barcode-input" placeholder="Codice a barre (EAN/UPC, es. 731451041129)" onkeydown="if(event.key==='Enter')cercaDaBarcode()">
-        <button class="btn" onclick="cercaDaBarcode()">🔍 Cerca da barcode</button>
+        <input type="text" id="mus-barcode-input" placeholder="Barcode (EAN/UPC) oppure numero di catalogo (es. 206 285-620)" onkeydown="if(event.key==='Enter')cercaDaBarcode()">
+        <button class="btn" onclick="cercaDaBarcode()">🔍 Cerca</button>
       </div>
       <p class="note" id="mus-bc-status"></p>
       <hr style="border:none; border-top:1px solid var(--line); margin:14px 0">
@@ -1840,17 +1840,58 @@ async function lookupByBarcode(bc){
   if(mb && (mb['Titolo']||mb['Artista'])) return { data: mb, fonte: 'MusicBrainz' };
   return null;
 }
+/* Ricerca per NUMERO DI CATALOGO dell'etichetta (es. "206 285-620"): utile per i
+   vinili/cassette senza codice a barre. Discogs (search) + MusicBrainz. */
+async function discogsByCatno(cn){
+  const token = getDiscogsToken(); if(!token) return null;
+  const r = await fetch('https://api.discogs.com/database/search?type=release&catno='+encodeURIComponent(cn)+'&per_page=5&token='+encodeURIComponent(token));
+  if(!r.ok) return null;
+  const j = await r.json();
+  const hit = (j.results||[]).find(x=>x.title);
+  if(!hit) return null;
+  return discogsSearchToFields(hit, '');
+}
+async function lookupByCatno(cn){
+  cn = (cn||'').trim();
+  if(cn.length < 2) return null;
+  let dg = null;
+  try{ dg = await discogsByCatno(cn); }catch(e){}
+  let mb = null;
+  try{
+    const j = await mbGet('release?query=' + encodeURIComponent('catno:"'+cn+'"') + '&limit=5');
+    const rel0 = (j.releases||[])[0];
+    if(rel0){ let r = rel0; try{ r = await mbRelease(rel0.id); }catch(e){} mb = mbToFields(r, ''); }
+  }catch(e){}
+  if(dg && (dg['Titolo']||dg['Artista'])){
+    let fonte = 'Discogs';
+    if(!dg['Tracklist'] && mb && mb['Tracklist']){ dg['Tracklist'] = mb['Tracklist']; fonte = 'Discogs + MusicBrainz'; }
+    if(!dg['Codice di catalogo']) dg['Codice di catalogo'] = cn;
+    return { data: dg, fonte };
+  }
+  if(mb && (mb['Titolo']||mb['Artista'])){
+    if(!mb['Codice di catalogo']) mb['Codice di catalogo'] = cn;
+    return { data: mb, fonte: 'MusicBrainz' };
+  }
+  return null;
+}
+/* Cerca da barcode OPPURE da numero di catalogo (rileva automaticamente). */
 async function cercaDaBarcode(){
   const inp = document.getElementById('mus-barcode-input'), st = document.getElementById('mus-bc-status');
-  const bc = (inp? inp.value : '').replace(/[^0-9]/g,'');
-  if(bc.length < 8){ if(st) st.textContent = 'Inserisci un codice a barre valido (EAN/UPC, min. 8 cifre).'; return; }
-  if(st) st.textContent = '🔎 Cerco '+bc+'…';
+  const raw = (inp ? inp.value : '').trim();
+  if(!raw){ if(st) st.textContent = 'Inserisci un codice a barre o un numero di catalogo.'; return; }
+  const soloCifre = raw.replace(/[^0-9]/g,'');
+  const pareBarcode = /^[0-9\s]+$/.test(raw) && soloCifre.length >= 8; // solo cifre/spazi
+  if(st) st.textContent = '🔎 Cerco «'+esc(raw)+'»…';
   let res = null;
-  try{ res = await lookupByBarcode(bc); }
-  catch(e){ if(st) st.textContent = '⚠️ Ricerca non riuscita: '+esc(e.message||''); return; }
+  try{
+    if(pareBarcode) res = await lookupByBarcode(soloCifre);
+    if(!res) res = await lookupByCatno(raw);
+  }catch(e){ if(st) st.textContent = '⚠️ Ricerca non riuscita: '+esc(e.message||''); return; }
   if(!res){
-    if(st) st.innerHTML = '❌ Nessun riscontro per '+bc+'. Suggerimento: aggiungi il token Discogs nelle Impostazioni per una copertura migliore. Puoi comunque inserire a mano.';
-    openObjForm('musica', null, {'Codice a barre': bc});
+    if(st) st.innerHTML = '❌ Nessun riscontro per «'+esc(raw)+'»'
+      + (getDiscogsToken() ? '.' : ' — aggiungi il token Discogs nelle Impostazioni per una copertura molto migliore.')
+      + ' Puoi comunque inserire a mano.';
+    openObjForm('musica', null, pareBarcode ? {'Codice a barre': soloCifre} : {'Codice di catalogo': raw});
     return;
   }
   if(st) st.innerHTML = '✅ Trovato su '+res.fonte+': <b>'+esc(res.data['Titolo']||'')+'</b> — '+esc(res.data['Artista']||'')+'. Verifica e salva.';
