@@ -1042,6 +1042,31 @@ function openObjForm(catKey, id, prefill){
     </div>`);
 }
 
+/* ---- Controllo doppioni per i supporti musicali ---- */
+function _normMus(s){
+  return (s||'').toString().toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+}
+function chiaviMusica(f){
+  const keys = [];
+  const bc = (f['Codice a barre']||'').replace(/[^0-9]/g,'');
+  if(bc.length >= 8) keys.push('bc:'+bc);
+  const cat = _normMus(f['Codice di catalogo']);
+  if(cat) keys.push('cat:'+_normMus(f['Etichetta'])+'|'+cat);
+  const tit = _normMus(f['Titolo']);
+  if(tit) keys.push('ta:'+tit+'|'+_normMus(f['Artista']));
+  return keys;
+}
+function trovaDoppioneMusica(fields, escludiId){
+  const nuove = chiaviMusica(fields);
+  if(!nuove.length) return null;
+  for(const rec of (objs.musica||[])){
+    if(escludiId && rec.id===escludiId) continue;
+    const esist = chiaviMusica(rec.fields||{});
+    if(esist.some(k=> nuove.includes(k))) return rec;
+  }
+  return null;
+}
 async function saveObj(catKey, id){
   const cat = catByKey(catKey);
   const g = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
@@ -1057,6 +1082,19 @@ async function saveObj(catKey, id){
   const collSel = g('of-coll');
   fields['Collocazione'] = collSel ? [collSel] : [];
   fields['Note'] = (document.getElementById('of-note')||{}).value || '';
+  // Blocca i doppioni dei supporti musicali (stesso barcode, o catalogo+etichetta, o titolo+artista)
+  if(catKey==='musica' && !id){
+    const dup = trovaDoppioneMusica(fields);
+    if(dup){
+      const c = codeStr(cat, dup.fields) || '';
+      const t = dup.fields['Titolo'] || '(senza titolo)';
+      const art = dup.fields['Artista'] || '';
+      if(!confirm('⚠️ Questo disco sembra GIÀ in catalogo:\n\n' + t + (art ? ' — ' + art : '') + (c ? '   [' + c + ']' : '') + '\n\nInserirlo comunque come ulteriore copia?')){
+        toast('Inserimento annullato: doppione di ' + (c || t));
+        return;
+      }
+    }
+  }
   try{
     if(id){
       const j = await updateRec(cat.tbl, id, fields);
