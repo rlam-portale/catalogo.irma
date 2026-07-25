@@ -374,6 +374,7 @@ const CAMPI = {
     {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS}
   ],
   musica: [
+    {k:'Numero posizione', l:'Numero posizione'},
     {k:'Artista', l:'Artista / gruppo'},
     {k:'Tipologia supporto', l:'Tipologia supporto', t:'sel', ch:['Vinile','CD','Cassetta','Poster','DVD musicale','Altro']},
     {k:'Anno di rilascio', l:'Anno di rilascio'},
@@ -1082,8 +1083,9 @@ function openObjForm(catKey, id, prefill){
       <div class="field"><label>Codice di catalogo</label>
         <input value="${o?esc(codeStr(cat,f)):''}" readonly placeholder="${o?'—':cat.prefix+'- (al salvataggio)'}"
                title="Assegnato automaticamente dall'app. Non modificabile."></div>
+      ${cat.musica ? `<div class="field"><label>Numero posizione</label><input id="of-${cssId('Numero posizione')}" value="${escAttr(f['Numero posizione']||'')}"></div>` : ''}
       <div class="field" style="grid-column:1/-1"><label>Titolo / denominazione *</label><input id="of-titolo" value="${escAttr(f['Titolo']||'')}"></div>
-      ${cat.campi.filter(x=>x.k!=='Note').map(campo).join('')}
+      ${cat.campi.filter(x=>x.k!=='Note' && x.k!=='Numero posizione').map(campo).join('')}
       <div class="field"><label>Collocazione</label><select id="of-coll"><option value=""></option>${colls.map(c=>`<option value="${c.id}" ${(f['Collocazione']||[]).includes(c.id)?'selected':''}>${esc(c.fields['Nome']||'')}</option>`).join('')}</select></div>
       <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="of-note">${esc(f['Note']||'')}</textarea></div>
     </div>
