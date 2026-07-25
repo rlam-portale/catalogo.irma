@@ -382,6 +382,7 @@ const CAMPI = {
     {k:'Codice di catalogo', l:'Codice di catalogo'},
     {k:'Paese di stampa', l:'Paese di stampa'},
     {k:'Codice a barre', l:'Codice a barre'},
+    {k:'Copertina', l:'Copertina (URL)'},
     {k:'Tracklist', l:'Tracklist', t:'area', full:1},
     {k:'Crediti', l:'Crediti', t:'area', full:1},
     {k:'Quotazione', l:'Quotazione (Discogs)', t:'area', full:1},
@@ -1156,7 +1157,7 @@ async function saveObj(catKey, id){
       objs[catKey].push(rec);
       let hadCover = !!_pendingCover;
       if(_pendingCover){ try{ await uploadScan(rec.id, _pendingCover, 'copertina', cat.foto); await ricaricaRecord(catKey, rec.id); }catch(e){} _pendingCover=null; }
-      else if(_pendingCoverUrl && cat.foto){ try{ await updateRec(cat.tbl, rec.id, {[cat.foto]:[{url:_pendingCoverUrl}]}); await ricaricaRecord(catKey, rec.id); hadCover=true; }catch(e){} }
+      else if(_pendingCoverUrl && cat.foto){ try{ await uploadCoverDaUrl(rec.id, cat.foto, _pendingCoverUrl); await ricaricaRecord(catKey, rec.id); hadCover=true; }catch(e){} }
       _pendingCoverUrl=null;
       fillFilters(); renderAll();
       toast(hadCover ? '✅ Scheda creata con copertina' : '✅ Scheda creata — ora aggiungi le fotografie');
@@ -1715,6 +1716,16 @@ async function uploadScan(recordId, canvas, filename, field){
   return res.json();
 }
 /* upload di un file grezzo (per i documenti: PDF o immagini non ricompresse) */
+async function uploadCoverDaUrl(recordId, field, url){
+  // Scarica l'immagine via proxy (aggiunge gli header CORS ed evita l'hotlink
+  // protection di Discogs), poi la carica come allegato permanente su Airtable.
+  const prox = 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&w=800&output=jpg';
+  const r = await fetch(prox);
+  if(!r.ok) throw new Error('immagine non scaricabile');
+  const blob = await r.blob();
+  const file = new File([blob], 'copertina.jpg', { type: blob.type || 'image/jpeg' });
+  return uploadFile(recordId, field, file);
+}
 async function uploadFile(recordId, field, file){
   const {token, base} = cfg();
   const base64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('file non leggibile')); r.readAsDataURL(file); });
@@ -2026,7 +2037,8 @@ async function lookupByCatno(cn){
    l'upload (solo se non c'è già una foto caricata dall'utente). */
 function estraiCover(data){
   if(data && data['_cover']){
-    if(!_pendingCover) _pendingCoverUrl = data['_cover'];
+    data['Copertina'] = data['_cover'];                 // salvato nel campo → mostrato via <img>
+    if(!_pendingCover) _pendingCoverUrl = data['_cover']; // tentativo di allegato permanente
     delete data['_cover'];
   }
   return data;
@@ -2216,7 +2228,7 @@ function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function coverSrc(cat, f){
   const a = (f[cat.foto]||[])[0];
   if(a){ const t=a.thumbnails; return (t && t.large && t.large.url) || a.url || ''; }
-  return cat.biblio ? (f['Copertina']||'') : '';
+  return f['Copertina'] || '';   // ripiego: URL copertina (libri e supporti musicali)
 }
 /* rapporto larghezza/altezza della prima foto (Airtable lo fornisce): 0 se assente */
 function fotoAR(cat, f){ const a=(f[cat.foto]||[])[0]; return (a && a.width && a.height) ? (a.width/a.height) : 0; }
