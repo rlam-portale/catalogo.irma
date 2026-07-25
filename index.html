@@ -1972,6 +1972,10 @@ function discogsFullToFields(rel, stats, bc){
 /* Da un risultato di ricerca, scarica il dettaglio e le statistiche di mercato. */
 async function discogsEnrich(hit, bc){
   const token = getDiscogsToken();
+  // Il cover_image è SEMPRE presente nei risultati di ricerca Discogs: usalo
+  // come copertina di riserva se il dettaglio non porta immagini.
+  const coverSearch = (hit && (hit.cover_image || hit.thumb)) || '';
+  let data = null;
   if(token && hit && hit.id){
     try{
       const [rr, sr] = await Promise.all([
@@ -1981,11 +1985,13 @@ async function discogsEnrich(hit, bc){
       if(rr.ok){
         const rel = await rr.json();
         let stats = null; if(sr && sr.ok){ try{ stats = await sr.json(); }catch(e){} }
-        return discogsFullToFields(rel, stats, bc);
+        data = discogsFullToFields(rel, stats, bc);
       }
     }catch(e){}
   }
-  return discogsSearchToFields(hit, bc);
+  if(!data) data = discogsSearchToFields(hit, bc);
+  if(!data['_cover'] && coverSearch) data['_cover'] = coverSearch;
+  return data;
 }
 async function discogsByBarcode(bc){
   const token = getDiscogsToken(); if(!token) return null;
@@ -2230,7 +2236,10 @@ function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function coverSrc(cat, f){
   const a = (f[cat.foto]||[])[0];
   if(a){ const t=a.thumbnails; return (t && t.large && t.large.url) || a.url || ''; }
-  return f['Copertina'] || '';   // ripiego: URL copertina (libri e supporti musicali)
+  const url = f['Copertina'] || '';   // ripiego: URL copertina (libri e supporti musicali)
+  // Le immagini Discogs vanno servite via proxy (aggiunge CORS ed evita l'hotlink protection).
+  if(url && /discogs\.com/i.test(url)) return 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&w=600&output=jpg';
+  return url;
 }
 /* rapporto larghezza/altezza della prima foto (Airtable lo fornisce): 0 se assente */
 function fotoAR(cat, f){ const a=(f[cat.foto]||[])[0]; return (a && a.width && a.height) ? (a.width/a.height) : 0; }
