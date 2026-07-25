@@ -167,7 +167,6 @@
     <div class="logo">🏛️ CATALOGO <span>Dajlani Arezzo</span></div>
     <nav id="nav">
       <button data-view="catalogo" class="active">Catalogo</button>
-      <button data-view="aggiungi">+ Aggiungi</button>
       <button data-view="prestiti">Prestiti</button>
       <button data-view="wishlist">Lista desideri</button>
       <button data-view="collocazioni">Collocazioni</button>
@@ -212,6 +211,7 @@
         <option value="posizione">Ordina: nr posizione</option>
         <option value="recenti">Ordina: aggiunti di recente</option>
       </select>
+      <button id="sez-add" class="btn" onclick="aggiungiSezioneCorrente()">➕ Aggiungi</button>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
     </div>
     <div class="counts" id="count"></div>
@@ -608,6 +608,7 @@ function renderChips(){
   el.innerHTML = chip('','◂','Sezioni',tot) + CAT.map(c=>chip(c.key,c.icon,c.label,contaCat(c.key))).join('');
 }
 function setCatFiltro(k){ catFiltro=k; renderChips(); renderCatalog(); }
+function aggiungiSezioneCorrente(){ if(catFiltro){ addCat = catFiltro; show('aggiungi'); } }
 
 function renderAddChips(){
   const el = document.getElementById('add-chips'); if(!el) return;
@@ -714,6 +715,8 @@ function renderCatalog(){
   }
   if(toolbar) toolbar.style.display = '';
   cont.className = 'grid';
+  const _cc = catByKey(catFiltro), _ba = document.getElementById('sez-add');
+  if(_ba) _ba.textContent = '➕ Aggiungi ' + (_cc ? _cc.sing : '');
   const q = (document.getElementById('q').value||'').toLowerCase().trim();
   const termini = q.split(/\s+/).filter(Boolean);
   const fc = document.getElementById('f-coll').value;
