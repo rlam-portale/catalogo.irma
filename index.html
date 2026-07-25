@@ -560,7 +560,9 @@ function show(view){
     document.getElementById('cfg-base').value  = cfg().base  || '';
     document.getElementById('cfg-discogs').value = store('discogs_token') || '';
   }
+  if(view==='catalogo') catFiltro = '';   // aprendo "Catalogo" si torna alla main page (sezioni)
   if(['catalogo','prestiti','wishlist','collocazioni'].includes(view)) loadAll();
+  if(view==='catalogo') renderCatalog();  // assicura il render della main anche se i dati sono già caricati
   if(view==='aggiungi'){ loadAll(); renderAddChips(); setAddCat(addCat); }
 }
 
