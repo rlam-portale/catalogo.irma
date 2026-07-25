@@ -200,8 +200,8 @@
   <!-- ============ CATALOGO ============ -->
   <section id="view-catalogo">
     <div class="tiles" id="tiles"></div>
-    <div class="chips" id="cat-chips"></div>
     <div class="toolbar">
+      <button class="btn secondary small" onclick="setCatFiltro('')">◂ Sezioni</button>
       <input type="search" id="q" placeholder="Cerca in tutti i campi: titolo, artista, interpreti, etichetta, tracce, crediti…" oninput="renderCatalog()">
       <select id="f-coll" onchange="renderCatalog()"><option value="">Collocazione: tutte</option></select>
       <select id="f-sort" onchange="renderCatalog()">
