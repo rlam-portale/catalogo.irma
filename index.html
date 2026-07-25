@@ -169,6 +169,7 @@
       <button data-view="catalogo" class="active">Catalogo</button>
       <button data-view="prestiti">Prestiti</button>
       <button data-view="wishlist">Lista desideri</button>
+      <button data-view="autori">Autori</button>
       <button data-view="collocazioni">Collocazioni</button>
       <button data-view="impostazioni">⚙︎</button>
     </nav>
@@ -293,6 +294,16 @@
   </section>
 
   <!-- ============ COLLOCAZIONI ============ -->
+  <section id="view-autori" class="hidden">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
+      <h2 style="margin:0">Archivio autori</h2>
+      <button class="btn" onclick="openAutoreForm(null)">➕ Nuovo autore</button>
+    </div>
+    <p class="note" style="margin-bottom:14px">La biografia si scrive una volta qui e si collega alle opere (quadri, sculture, supporti musicali) dalla loro scheda.</p>
+    <input type="search" id="q-autori" placeholder="Cerca autore per nome…" oninput="renderAutori()" style="max-width:360px; margin-bottom:14px">
+    <div id="autori-list" class="grid"></div>
+  </section>
+
   <section id="view-collocazioni" class="hidden">
     <h2 style="margin-bottom:16px">Collocazioni fisiche</h2>
     <div class="toolbar">
@@ -309,7 +320,8 @@
 
 <script>
 /* ================== CONFIG & STATO ================== */
-const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti' };
+const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti', autori:'Autori' };
+const AUTORE_LINK = 'Autore (archivio)';   // campo link verso l'archivio Autori
 const STATO_COLORS = {'Da leggere':'var(--blue)','In lettura':'var(--amber)','Letto':'var(--green)','Abbandonato':'var(--muted)'};
 const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fantasy','Storia','Biografia','Poesia','Arte','Scienza','Filosofia','Viaggi','Fumetto','Bambini/Ragazzi','Altro'];
 
@@ -420,20 +432,20 @@ Object.keys(CAMPI).forEach(k => CAMPI[k] = CAMPI[k].concat(CAMPI_COMUNI));
 /* Categorie del catalogo. 'biblio' marca i Libri, che tengono ISBN/scansioni/CSV/prestiti/wishlist. */
 const CAT = [
   {key:'libri',     tbl:'Libri',     label:'Libri',                    plur:'libri',     sing:'libro',    prefix:'BIB', icon:'📚', sub:'Autore',       foto:'Scansioni', biblio:true},
-  {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri},
+  {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri, autore:true},
   {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti},
-  {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture},
+  {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture, autore:true},
   {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili},
   {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
   {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche},
-  {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true}
+  {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true}
 ];
 const catByKey = k => CAT.find(c=>c.key===k);
 const catByTbl = t => CAT.find(c=>c.tbl===t);
 function codeStr(cat, f){ return f['Codice'] ? cat.prefix+'-'+String(f['Codice']).padStart(4,'0') : ''; }
 
 let mem = {};           // fallback se localStorage non disponibile
-let books = [], colls = [], loans = [];
+let books = [], colls = [], loans = [], autori = [];
 let objs = {};          // objs[catKey] = array di record; objs.libri === books (stesso riferimento)
 let loaded = false;
 let scanInCorso = false;   // usato dal controllo versione per non interrompere una scansione
@@ -526,11 +538,12 @@ async function loadAll(force){
   if(!token || !base){ show('impostazioni'); return; }
   document.getElementById('catalog-loading').classList.remove('hidden');
   try{
-    const res = await Promise.all([ ...CAT.map(c=>listAll(c.tbl)), listAll(TBL.coll), listAll(TBL.prestiti) ]);
+    const res = await Promise.all([ ...CAT.map(c=>listAll(c.tbl)), listAll(TBL.coll), listAll(TBL.prestiti), listAll(TBL.autori) ]);
     CAT.forEach((c,i)=> objs[c.key] = res[i]);
     books = objs.libri;                 // stesso riferimento: il codice dei libri continua a funzionare
     colls = res[CAT.length];
     loans = res[CAT.length+1];
+    autori = res[CAT.length+2];
     loaded = true;
     fillFilters(); renderAll();
   }catch(e){ toast(e.message); if(String(e.message).includes('401')||String(e.message).includes('403')) show('impostazioni'); }
@@ -563,8 +576,9 @@ function show(view){
     document.getElementById('cfg-discogs').value = store('discogs_token') || '';
   }
   if(view==='catalogo') catFiltro = '';   // aprendo "Catalogo" si torna alla main page (sezioni)
-  if(['catalogo','prestiti','wishlist','collocazioni'].includes(view)) loadAll();
+  if(['catalogo','prestiti','wishlist','collocazioni','autori'].includes(view)) loadAll();
   if(view==='catalogo') renderCatalog();  // assicura il render della main anche se i dati sono già caricati
+  if(view==='autori') renderAutori();
   if(view==='aggiungi'){ loadAll(); renderAddChips(); setAddCat(addCat); }
 }
 
@@ -607,7 +621,77 @@ async function testConnection(goCatalog){
 
 /* ================== RENDER ================== */
 let addCat = 'libri';
-function renderAll(){ renderChips(); renderAddChips(); renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); }
+function renderAll(){ renderChips(); renderAddChips(); renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); renderAutori(); }
+function autoreById(id){ return autori.find(a=>a.id===id); }
+function nAutoreOpere(id){
+  let n=0; CAT.filter(c=>c.autore).forEach(c=> (objs[c.key]||[]).forEach(o=>{ if((o.fields[AUTORE_LINK]||[]).includes(id)) n++; }));
+  return n;
+}
+function renderAutori(){
+  const wrap = document.getElementById('autori-list'); if(!wrap) return;
+  const q = (document.getElementById('q-autori')||{}).value; const ql = (q||'').toLowerCase().trim();
+  let list = autori.slice().sort((a,b)=> String(a.fields['Nome']||'').localeCompare(String(b.fields['Nome']||''),'it'));
+  if(ql) list = list.filter(a=> String(a.fields['Nome']||'').toLowerCase().includes(ql) || String(a.fields['Biografia']||'').toLowerCase().includes(ql));
+  if(!list.length){ wrap.innerHTML = `<div class="empty">${autori.length? 'Nessun autore con questa ricerca.' : 'Nessun autore. Aggiungi il primo con «Nuovo autore».'}</div>`; return; }
+  wrap.innerHTML = list.map(a=>{
+    const f = a.fields;
+    const foto = (f['Foto']||[])[0];
+    const img = foto ? ((foto.thumbnails&&foto.thumbnails.large&&foto.thumbnails.large.url)||foto.url) : '';
+    const date = [f['Nascita'], f['Morte']].filter(Boolean).join(' – ');
+    const bio = String(f['Biografia']||'').slice(0,140);
+    const n = nAutoreOpere(a.id);
+    return `<div class="book" onclick="openAutoreForm('${a.id}')">
+      <div class="cover" style="aspect-ratio:1">${img?`<img src="${esc(img)}" loading="lazy" onerror="this.remove()">`:`<div class="noimg">${esc(f['Nome']||'')}</div>`}<span class="catbadge">👤 Autore</span></div>
+      <div class="binfo"><div class="btitle">${esc(f['Nome']||'—')}</div><div class="bauthor">${esc(date)}${date&&f['Nazionalità']?' · ':''}${esc(f['Nazionalità']||'')}</div>
+      ${bio?`<div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.3">${esc(bio)}${f['Biografia'].length>140?'…':''}</div>`:''}
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">${n} ${n===1?'opera':'opere'}</div></div>
+    </div>`;
+  }).join('');
+}
+function openAutoreForm(id){
+  const a = id ? autoreById(id) : null; const f = a? a.fields : {};
+  const foto = (f['Foto']||[])[0];
+  const img = foto ? ((foto.thumbnails&&foto.thumbnails.large&&foto.thumbnails.large.url)||foto.url) : '';
+  modal(`
+    <h2>${a?'Modifica':'Nuovo'} autore</h2>
+    <div class="frow">
+      <div class="field" style="grid-column:1/-1"><label>Nome *</label><input id="au-nome" value="${escAttr(f['Nome']||'')}"></div>
+      <div class="field"><label>Nascita</label><input id="au-nascita" value="${escAttr(f['Nascita']||'')}" placeholder="es. 1881"></div>
+      <div class="field"><label>Morte</label><input id="au-morte" value="${escAttr(f['Morte']||'')}" placeholder="es. 1962"></div>
+      <div class="field" style="grid-column:1/-1"><label>Nazionalità</label><input id="au-naz" value="${escAttr(f['Nazionalità']||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Biografia</label><textarea id="au-bio" style="min-height:140px">${esc(f['Biografia']||'')}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="au-note">${esc(f['Note']||'')}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Foto / ritratto</label>
+        ${img?`<img src="${esc(img)}" style="max-height:120px;border-radius:8px;display:block;margin-bottom:8px">`:''}
+        <input type="file" id="au-foto" accept="image/*"></div>
+    </div>
+    <div class="modal-actions">
+      ${a && nAutoreOpere(id)===0 ? `<button class="btn small danger" style="margin-right:auto" onclick="deleteAutore('${id}')">Elimina</button>` : ''}
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="saveAutore(${a?`'${id}'`:'null'})">💾 Salva</button>
+    </div>`);
+}
+async function saveAutore(id){
+  const g = k => (document.getElementById(k)||{}).value || '';
+  const nome = g('au-nome').trim();
+  if(!nome){ toast('Il nome è obbligatorio'); return; }
+  const fields = { 'Nome':nome, 'Nascita':g('au-nascita').trim()||null, 'Morte':g('au-morte').trim()||null,
+    'Nazionalità':g('au-naz').trim()||null, 'Biografia':g('au-bio')||null, 'Note':g('au-note')||null };
+  const file = (document.getElementById('au-foto')||{}).files?.[0];
+  try{
+    let recId = id;
+    if(id){ const j = await updateRec(TBL.autori, id, fields); const i=autori.findIndex(x=>x.id===id); if(i>=0) autori[i]=j; }
+    else { const j = await createRec(TBL.autori, fields); autori.push(j.records[0]); recId = j.records[0].id; }
+    if(file){ try{ await uploadFile(recId, 'Foto', file); const j2 = await api(encodeURIComponent(TBL.autori)+'/'+recId); const i=autori.findIndex(x=>x.id===recId); if(i>=0) autori[i]=j2; }catch(e){ toast('Foto non caricata: '+e.message); } }
+    closeModal(); renderAutori(); toast('💾 Autore salvato');
+  }catch(e){ toast(e.message); }
+}
+async function deleteAutore(id){
+  if(nAutoreOpere(id)>0){ toast('Autore collegato a delle opere: scollegalo prima'); return; }
+  if(!confirm('Eliminare questo autore dall’archivio?')) return;
+  try{ await deleteRec(TBL.autori, id); autori = autori.filter(a=>a.id!==id); closeModal(); renderAutori(); }
+  catch(e){ toast(e.message); }
+}
 
 function contaCat(k){ return (objs[k]||[]).filter(o=>posseduto(k,o.fields)).length; }
 
@@ -1001,6 +1085,16 @@ function openObjDetail(catKey, id){
     kv.push([fld.l, disp]);
   }
   if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
+  if(cat.autore){
+    let aid = (f[AUTORE_LINK]||[])[0];
+    if(!aid && f[cat.sub]){ const m = autori.find(a=>(a.fields['Nome']||'').toLowerCase()===String(f[cat.sub]).toLowerCase()); if(m) aid = m.id; }
+    const a = aid && autoreById(aid);
+    if(a){
+      const af = a.fields, date = [af['Nascita'], af['Morte']].filter(Boolean).join(' – ');
+      const testo = [ [date, af['Nazionalità']].filter(Boolean).join(' · '), af['Biografia'], af['Note']?('Note: '+af['Note']):'' ].filter(Boolean).join('\n\n');
+      if(testo) blocks.push(['Autore — ' + (af['Nome']||''), testo]);
+    }
+  }
   const cov = coverSrc(cat, f);
   const ar = fotoAR(cat, f);
   const covStyle = ar ? ` style="aspect-ratio:${ar.toFixed(4)}; ${ar>=1?'width:min(460px,52vw)':'height:min(56vh,540px)'}"` : '';
@@ -1145,6 +1239,17 @@ function openObjForm(catKey, id, prefill){
   const o = id ? objById(catKey, id) : null;
   const f = o ? o.fields : (prefill||{});
   const campo = fld => {
+    if(cat.autore && fld.k===cat.sub){
+      const idA = 'of-' + cssId(fld.k);
+      const textField = `<div class="field" style="grid-column:1/-1"><label>${esc(fld.l)}</label><input id="${idA}" value="${escAttr(f[fld.k]||'')}"></div>`;
+      let linked = (f[AUTORE_LINK]||[])[0] || '';
+      if(!linked && f[cat.sub]){ const m = autori.find(a=>(a.fields['Nome']||'').toLowerCase()===String(f[cat.sub]).toLowerCase()); if(m) linked = m.id; }
+      const opts = autori.slice().sort((a,b)=>String(a.fields['Nome']||'').localeCompare(String(b.fields['Nome']||''),'it'))
+        .map(a=>`<option value="${a.id}"${a.id===linked?' selected':''}>${esc(a.fields['Nome']||'')}</option>`).join('');
+      const drop = `<div class="field" style="grid-column:1/-1"><label>Autore in archivio (per la biografia)</label>
+        <select id="of-autore-link" onchange="onAutoreChange()"><option value="">— non collegato —</option>${opts}<option value="__new__">➕ Nuovo autore…</option></select></div>`;
+      return textField + drop;
+    }
     const val = f[fld.k];
     const full = fld.full ? ' style="grid-column:1/-1"' : '';
     const idA = 'of-' + cssId(fld.k);
@@ -1215,7 +1320,29 @@ function raccogliCampi(cat){
   const collSel = g('of-coll');
   fields['Collocazione'] = collSel ? [collSel] : [];
   fields['Note'] = (document.getElementById('of-note')||{}).value || '';
+  if(cat.autore){
+    const sel = document.getElementById('of-autore-link');
+    const aid = sel ? sel.value : '';
+    fields[AUTORE_LINK] = (aid && aid!=='__new__') ? [aid] : [];   // il nome resta nel campo testo
+  }
   return fields;
+}
+async function onAutoreChange(){
+  const sel = document.getElementById('of-autore-link'); if(!sel) return;
+  if(sel.value==='__new__'){
+    const nome = (prompt('Nome del nuovo autore:')||'').trim();
+    if(!nome){ sel.value=''; return; }
+    try{
+      const j = await createRec(TBL.autori, {'Nome':nome}); const a = j.records[0]; autori.push(a);
+      const opt = document.createElement('option'); opt.value=a.id; opt.textContent=nome;
+      sel.insertBefore(opt, sel.querySelector('option[value="__new__"]')); sel.value=a.id;
+    }catch(e){ toast(e.message); sel.value=''; return; }
+  }
+  // rispecchia il nome dell'autore nel campo testo, se vuoto
+  const a = autoreById(sel.value);
+  const sub = _ofCat ? catByKey(_ofCat).sub : null;
+  if(a && sub){ const txt = document.getElementById('of-' + cssId(sub)); if(txt && !txt.value.trim()) txt.value = a.fields['Nome']||''; }
+  autosalva();
 }
 function _feedbackSalvato(){
   const el = document.getElementById('of-saved'); if(!el) return;
