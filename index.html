@@ -197,7 +197,7 @@
     <div class="tiles" id="tiles"></div>
     <div class="chips" id="cat-chips"></div>
     <div class="toolbar">
-      <input type="search" id="q" placeholder="Cerca per nome, autore, codice, materia…" oninput="renderCatalog()">
+      <input type="search" id="q" placeholder="Cerca in tutti i campi: titolo, artista, interpreti, etichetta, tracce, crediti…" oninput="renderCatalog()">
       <select id="f-coll" onchange="renderCatalog()"><option value="">Collocazione: tutte</option></select>
       <select id="f-sort" onchange="renderCatalog()">
         <option value="Codice">Ordina: codice</option>
@@ -633,20 +633,68 @@ function fillFilters(){
   c.value = cur;
 }
 
+/* Testo cercabile = TUTTI i campi testuali del record (stringhe, numeri e
+   liste di stringhe: tracklist, crediti, etichetta, interpreti, ecc.). */
+function testoCercabile(cat, rec){
+  const f = rec.fields || {};
+  const parts = [ codeStr(cat, f) ];
+  for(const k in f){
+    const v = f[k];
+    if(v==null || v==='') continue;
+    if(Array.isArray(v)){
+      for(const x of v){ if(typeof x==='string' || typeof x==='number') parts.push(String(x)); }
+    } else if(typeof v==='string' || typeof v==='number'){
+      parts.push(String(v));
+    }
+  }
+  return parts.join('  ·  ').toLowerCase();
+}
+function _fieldLabel(cat, k){
+  const c = (cat.campi||[]).find(x=>x.k===k);
+  if(c) return c.l;
+  const base = {'Titolo':'Titolo','Note':'Note','Codice a barre':'Codice a barre','Genere':'Genere','Tag':'Tag','Descrizione':'Descrizione','Autore':'Autore','Editore':'Editore'};
+  return base[k] || k;
+}
+function _excerpt(text, term){
+  const i = text.toLowerCase().indexOf(term);
+  if(i<0) return text.slice(0,60);
+  const a = Math.max(0, i-24), b = Math.min(text.length, i+term.length+30);
+  return (a>0?'…':'') + text.slice(a,b).replace(/\s+/g,' ').trim() + (b<text.length?'…':'');
+}
+/* Mostra in quali campi (diversi da titolo/artista già visibili) è avvenuto il match. */
+function snippetMatch(cat, rec, termini){
+  const f = rec.fields || {};
+  const escludi = new Set(['Titolo', cat.sub, 'Codice', 'Collocazione']);
+  const out = [], viste = new Set();
+  for(const term of termini){
+    for(const k in f){
+      if(escludi.has(k) || viste.has(k)) continue;
+      const v = f[k];
+      let text = '';
+      if(typeof v==='string' || typeof v==='number') text = String(v);
+      else if(Array.isArray(v)) text = v.filter(x=>typeof x==='string'||typeof x==='number').join(', ');
+      else continue;
+      if(text && text.toLowerCase().includes(term)){
+        viste.add(k);
+        out.push(_fieldLabel(cat,k) + ': ' + _excerpt(text, term));
+        break;
+      }
+    }
+    if(out.length>=2) break;
+  }
+  return out.slice(0,2);
+}
 function renderCatalog(){
-  const q = (document.getElementById('q').value||'').toLowerCase();
+  const q = (document.getElementById('q').value||'').toLowerCase().trim();
+  const termini = q.split(/\s+/).filter(Boolean);
   const fc = document.getElementById('f-coll').value;
   const sort = document.getElementById('f-sort').value;
   let list = tuttiOggetti();
   if(catFiltro) list = list.filter(x=>x.cat.key===catFiltro);
   if(fc) list = list.filter(x=>(x.rec.fields['Collocazione']||[]).includes(fc));
-  if(q) list = list.filter(({cat,rec})=>{
-    const f = rec.fields;
-    const hay = [codeStr(cat,f), f['Titolo'], f[cat.sub], f['ISBN'], f['Autore'], f['Ambito'], f['Materiale'],
-      f['Tecnica'], f['Manifattura'], f['Origine'], f['Tipologia'], f['Epoca'], f['Editore'],
-      f['Stato'], f['Stato di conservazione'], f['Note'], f['Descrizione']].map(v=>String(v||'').toLowerCase());
-    const tags = (f['Genere']||[]).concat(f['Tag']||[]).map(t=>String(t).toLowerCase());
-    return hay.some(h=>h.includes(q)) || tags.some(t=>t.includes(q));
+  if(termini.length) list = list.filter(({cat,rec})=>{
+    const hay = testoCercabile(cat, rec);
+    return termini.every(t=> hay.includes(t));   // tutte le parole devono comparire
   });
   const subOf = ({cat,rec}) => String(rec.fields[cat.sub]||'');
   if(sort==='recenti') list.sort((a,b)=> (b.rec.createdTime||'').localeCompare(a.rec.createdTime||''));
@@ -656,11 +704,14 @@ function renderCatalog(){
       : a.cat.label.localeCompare(b.cat.label,'it'));
   else list.sort((a,b)=> String(a.rec.fields['Titolo']||'').localeCompare(String(b.rec.fields['Titolo']||''), 'it'));
   document.getElementById('count').textContent = `${list.length} ${list.length===1?'oggetto':'oggetti'}`;
-  document.getElementById('catalog').innerHTML = list.map(x=>cardHTML(x.cat, x.rec)).join('');
+  document.getElementById('catalog').innerHTML = list.map(x=>{
+    const snip = termini.length ? snippetMatch(x.cat, x.rec, termini) : [];
+    return cardHTML(x.cat, x.rec, snip);
+  }).join('');
   document.getElementById('catalog-empty').classList.toggle('hidden', list.length>0 || !loaded);
 }
 
-function cardHTML(cat, o){
+function cardHTML(cat, o, snippet){
   const f = o.fields;
   let badge = '';
   if(cat.biblio){
@@ -679,7 +730,7 @@ function cardHTML(cat, o){
   const cb = `<span class="catbadge">${cat.icon} ${esc(cbLabel)}</span>`;
   return `<div class="book" onclick="openDetail('${cat.key}','${o.id}')">
     <div class="cover"${covStyle}>${cov ? `<img src="${esc(cov)}" loading="lazy" onload="fixAR(this)" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
-    <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f[cat.sub]||'')}</div>${stars}</div>
+    <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f[cat.sub]||'')}</div>${stars}${(snippet&&snippet.length)?`<div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35">${snippet.map(s=>'🔎 '+esc(s)).join('<br>')}</div>`:''}</div>
   </div>`;
 }
 
