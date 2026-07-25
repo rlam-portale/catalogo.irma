@@ -91,6 +91,12 @@
   .tile{flex:1 1 0; min-width:84px; background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:8px 10px}
   .tile .num{font-size:17px; font-weight:700; font-family:Georgia,serif; color:var(--accent-dark); line-height:1.1}
   .tile .lbl{font-size:10px; color:var(--muted); margin-top:1px; line-height:1.15}
+  .sezioni{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px}
+  .sezione{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:24px 18px; text-align:center; cursor:pointer; transition:transform .15s, border-color .15s; border:1px solid transparent}
+  .sezione:hover{border-color:var(--accent); transform:translateY(-2px)}
+  .sezione .sez-ic{font-size:34px; line-height:1}
+  .sezione .sez-lb{font-weight:700; margin-top:10px; color:var(--accent-dark)}
+  .sezione .sez-n{font-size:12.5px; color:var(--muted); margin-top:3px}
 
   /* modal */
   .overlay{position:fixed; inset:0; background:rgba(40,30,15,.45); display:flex; align-items:flex-start; justify-content:center; padding:30px 15px; z-index:100; overflow-y:auto}
@@ -599,7 +605,7 @@ function renderChips(){
   const el = document.getElementById('cat-chips'); if(!el) return;
   const tot = CAT.reduce((s,c)=>s+contaCat(c.key),0);
   const chip = (key,icon,label,n)=>`<div class="chip ${catFiltro===key?'active':''}" onclick="setCatFiltro('${key}')">${icon?icon+' ':''}${esc(label)} <span class="n">${n}</span></div>`;
-  el.innerHTML = chip('','','Tutte',tot) + CAT.map(c=>chip(c.key,c.icon,c.label,contaCat(c.key))).join('');
+  el.innerHTML = chip('','◂','Sezioni',tot) + CAT.map(c=>chip(c.key,c.icon,c.label,contaCat(c.key))).join('');
 }
 function setCatFiltro(k){ catFiltro=k; renderChips(); renderCatalog(); }
 
@@ -688,6 +694,26 @@ function snippetMatch(cat, rec, termini){
   return out.slice(0,2);
 }
 function renderCatalog(){
+  const toolbar = document.querySelector('#view-catalogo .toolbar');
+  const cont = document.getElementById('catalog');
+  // MAIN PAGE: nessuna sezione selezionata → mostra le sezioni, niente anteprime.
+  if(!catFiltro){
+    if(toolbar) toolbar.style.display = 'none';
+    cont.className = 'sezioni';
+    cont.innerHTML = CAT.map(c=>{
+      const n = contaCat(c.key);
+      return `<div class="sezione" onclick="setCatFiltro('${c.key}')">
+        <div class="sez-ic">${c.icon}</div>
+        <div class="sez-lb">${esc(c.label)}</div>
+        <div class="sez-n">${n} ${n===1?'oggetto':'oggetti'}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('count').textContent = `${CAT.length} sezioni`;
+    document.getElementById('catalog-empty').classList.add('hidden');
+    return;
+  }
+  if(toolbar) toolbar.style.display = '';
+  cont.className = 'grid';
   const q = (document.getElementById('q').value||'').toLowerCase().trim();
   const termini = q.split(/\s+/).filter(Boolean);
   const fc = document.getElementById('f-coll').value;
