@@ -87,10 +87,10 @@
   .counts{color:var(--muted); font-size:13.5px; margin-bottom:14px}
 
   /* stat tiles */
-  .tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:22px}
-  .tile{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px}
-  .tile .num{font-size:26px; font-weight:700; font-family:Georgia,serif; color:var(--accent-dark)}
-  .tile .lbl{font-size:12.5px; color:var(--muted); margin-top:2px}
+  .tiles{display:flex; flex-wrap:nowrap; gap:8px; margin-bottom:18px; overflow-x:auto}
+  .tile{flex:1 1 0; min-width:84px; background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:8px 10px}
+  .tile .num{font-size:17px; font-weight:700; font-family:Georgia,serif; color:var(--accent-dark); line-height:1.1}
+  .tile .lbl{font-size:10px; color:var(--muted); margin-top:1px; line-height:1.15}
 
   /* modal */
   .overlay{position:fixed; inset:0; background:rgba(40,30,15,.45); display:flex; align-items:flex-start; justify-content:center; padding:30px 15px; z-index:100; overflow-y:auto}
@@ -203,6 +203,7 @@
         <option value="Codice">Ordina: codice</option>
         <option value="Titolo">Ordina: nome</option>
         <option value="sub">Ordina: autore/origine</option>
+        <option value="posizione">Ordina: nr posizione</option>
         <option value="recenti">Ordina: aggiunti di recente</option>
       </select>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
@@ -704,6 +705,10 @@ function renderCatalog(){
   else if(sort==='Codice') list.sort((a,b)=> a.cat.key===b.cat.key
       ? (a.rec.fields['Codice']||0)-(b.rec.fields['Codice']||0)
       : a.cat.label.localeCompare(b.cat.label,'it'));
+  else if(sort==='posizione'){
+    const pv = x => String(x.rec.fields['Numero posizione']||'').trim();
+    list.sort((a,b)=>{ const A=pv(a), B=pv(b); if(!A&&!B) return 0; if(!A) return 1; if(!B) return -1; return A.localeCompare(B,'it',{numeric:true}); });
+  }
   else list.sort((a,b)=> String(a.rec.fields['Titolo']||'').localeCompare(String(b.rec.fields['Titolo']||''), 'it'));
   document.getElementById('count').textContent = `${list.length} ${list.length===1?'oggetto':'oggetti'}`;
   document.getElementById('catalog').innerHTML = list.map(x=>{
@@ -728,10 +733,11 @@ function cardHTML(cat, o, snippet){
   const ar = fotoAR(cat, f);
   const covStyle = ar ? ` style="aspect-ratio:${ar.toFixed(4)}"` : '';
   const code = f['Codice'] ? `<span class="code">${esc(codeStr(cat,f))}</span>` : '';
+  const pos = (cat.musica && f['Numero posizione']) ? `<span class="code" style="right:auto;left:8px;top:8px" title="Numero posizione">📍 ${esc(f['Numero posizione'])}</span>` : '';
   const cbLabel = cat.label.split(',')[0].split(' e ')[0];
   const cb = `<span class="catbadge">${cat.icon} ${esc(cbLabel)}</span>`;
   return `<div class="book" onclick="openDetail('${cat.key}','${o.id}')">
-    <div class="cover"${covStyle}>${cov ? `<img src="${esc(cov)}" loading="lazy" onload="fixAR(this)" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${cb}</div>
+    <div class="cover"${covStyle}>${cov ? `<img src="${esc(cov)}" loading="lazy" onload="fixAR(this)" onerror="this.remove()">` : `<div class="noimg">${esc(f['Titolo']||'')}</div>`}${badge}${code}${pos}${cb}</div>
     <div class="binfo"><div class="btitle">${esc(f['Titolo']||'—')}</div><div class="bauthor">${esc(f[cat.sub]||'')}</div>${stars}${(snippet&&snippet.length)?`<div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35">${snippet.map(s=>'🔎 '+esc(s)).join('<br>')}</div>`:''}</div>
   </div>`;
 }
