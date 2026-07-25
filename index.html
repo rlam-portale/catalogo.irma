@@ -383,6 +383,8 @@ const CAMPI = {
     {k:'Paese di stampa', l:'Paese di stampa'},
     {k:'Codice a barre', l:'Codice a barre'},
     {k:'Tracklist', l:'Tracklist', t:'area', full:1},
+    {k:'Crediti', l:'Crediti', t:'area', full:1},
+    {k:'Quotazione', l:'Quotazione (Discogs)', t:'area', full:1},
     {k:'Stato di conservazione', l:'Grading copertina / busta', t:'sel', ch:GRADING},
     {k:'Stato del supporto', l:'Stato del supporto (disco/nastro)', t:'sel', ch:GRADING},
     {k:'Difetti e note', l:'Difetti e note di conservazione', t:'area', full:1},
@@ -421,6 +423,7 @@ let objs = {};          // objs[catKey] = array di record; objs.libri === books 
 let loaded = false;
 let scanInCorso = false;   // usato dal controllo versione per non interrompere una scansione
 let _pendingCover = null;  // copertina analizzata da caricare dopo la creazione di un supporto musicale
+let _pendingCoverUrl = null; // URL copertina da Discogs, allegata dopo il salvataggio
 let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
@@ -1062,8 +1065,10 @@ async function saveObj(catKey, id){
     } else {
       const [rec] = await creaInTabella(cat.tbl, [fields]);
       objs[catKey].push(rec);
-      const hadCover = !!_pendingCover;
+      let hadCover = !!_pendingCover;
       if(_pendingCover){ try{ await uploadScan(rec.id, _pendingCover, 'copertina', cat.foto); await ricaricaRecord(catKey, rec.id); }catch(e){} _pendingCover=null; }
+      else if(_pendingCoverUrl && cat.foto){ try{ await updateRec(cat.tbl, rec.id, {[cat.foto]:[{url:_pendingCoverUrl}]}); await ricaricaRecord(catKey, rec.id); hadCover=true; }catch(e){} }
+      _pendingCoverUrl=null;
       fillFilters(); renderAll();
       toast(hadCover ? '✅ Scheda creata con copertina' : '✅ Scheda creata — ora aggiungi le fotografie');
       openObjDetail(catKey, rec.id);
@@ -1813,6 +1818,73 @@ function discogsSearchToFields(hit, bc){
     'Note': 'ℹ️ Dati recuperati da Discogs: verifica edizione, anno e stato di conservazione.'
   };
 }
+/* Arricchimento dal DETTAGLIO della release Discogs (accessibile dal browser):
+   tracklist completa, crediti, generi/stili, copertina e quotazione di mercato. */
+function fmtCrediti(rel){
+  const righe = [];
+  const perRuolo = {};
+  (rel.extraartists||[]).forEach(a=>{
+    const ruolo = (a.role||'').replace(/\s*\[[^\]]*\]/g,'').trim() || 'Altro';
+    (perRuolo[ruolo] = perRuolo[ruolo] || []).push(stripArtistN(a.name));
+  });
+  Object.keys(perRuolo).forEach(r=> righe.push(r + ': ' + perRuolo[r].join(', ')));
+  return righe.join('\n');
+}
+function fmtQuotazione(rel, stats){
+  const l = [];
+  if(stats && stats.lowest_price && stats.lowest_price.value!=null)
+    l.push('Prezzo minimo in vendita: ' + stats.lowest_price.value + ' ' + (stats.lowest_price.currency||''));
+  if(stats && stats.num_for_sale!=null) l.push('Copie in vendita ora: ' + stats.num_for_sale);
+  const c = rel.community || {};
+  if(c.have!=null || c.want!=null) l.push('Posseduto da ' + (c.have||0) + ' · Desiderato da ' + (c.want||0));
+  if(c.rating && c.rating.average) l.push('Voto utenti: ' + c.rating.average + '/5 (' + (c.rating.count||0) + ' voti)');
+  if(l.length){ let d=''; try{ d = new Date().toLocaleDateString('it-IT'); }catch(e){} l.push('(Discogs' + (d?', '+d:'') + ')'); }
+  return l.join('\n');
+}
+function discogsFullToFields(rel, stats, bc){
+  const artista = (rel.artists||[]).map(a=>stripArtistN(a.name)).filter(Boolean).join(', ');
+  const li = (rel.labels||[])[0]||{};
+  const gen = [...(rel.genres||[]), ...(rel.styles||[])];
+  const tracks = (rel.tracklist||[]).filter(t=>t.title && t.type_!=='heading')
+    .map(t=> (t.position? t.position+'. ':'') + t.title + (t.duration? ' ('+t.duration+')':''));
+  const bar = (rel.identifiers||[]).find(i=>(i.type||'').toLowerCase()==='barcode');
+  const fmts = (rel.formats||[]).map(f=> [f.name, ...((f.descriptions)||[])].join(' '));
+  const cover = ((rel.images||[]).find(im=>im.type==='primary') || (rel.images||[])[0] || {}).uri || '';
+  return {
+    'Titolo': rel.title || '',
+    'Artista': artista,
+    'Tipologia supporto': mapFormatoDiscogsStr(fmts),
+    'Anno di rilascio': rel.year ? String(rel.year) : '',
+    'Genere musicale': gen.join(', '),
+    'Etichetta': li.name || '',
+    'Codice di catalogo': li.catno || '',
+    'Paese di stampa': PAESI[rel.country] || rel.country || '',
+    'Codice a barre': (bar&&bar.value)? bar.value.replace(/\s+/g,'') : (bc||''),
+    'Tracklist': tracks.join('\n'),
+    'Crediti': fmtCrediti(rel),
+    'Quotazione': fmtQuotazione(rel, stats),
+    '_cover': cover,
+    'Note': 'ℹ️ Dati recuperati da Discogs: verifica edizione, anno e stato di conservazione.'
+  };
+}
+/* Da un risultato di ricerca, scarica il dettaglio e le statistiche di mercato. */
+async function discogsEnrich(hit, bc){
+  const token = getDiscogsToken();
+  if(token && hit && hit.id){
+    try{
+      const [rr, sr] = await Promise.all([
+        fetch('https://api.discogs.com/releases/' + hit.id + '?token=' + encodeURIComponent(token)),
+        fetch('https://api.discogs.com/marketplace/stats/' + hit.id + '?token=' + encodeURIComponent(token)).catch(()=>null)
+      ]);
+      if(rr.ok){
+        const rel = await rr.json();
+        let stats = null; if(sr && sr.ok){ try{ stats = await sr.json(); }catch(e){} }
+        return discogsFullToFields(rel, stats, bc);
+      }
+    }catch(e){}
+  }
+  return discogsSearchToFields(hit, bc);
+}
 async function discogsByBarcode(bc){
   const token = getDiscogsToken(); if(!token) return null;
   const r = await fetch('https://api.discogs.com/database/search?type=release&barcode='+encodeURIComponent(bc)+'&per_page=5&token='+encodeURIComponent(token));
@@ -1820,24 +1892,17 @@ async function discogsByBarcode(bc){
   const j = await r.json();
   const hit = (j.results||[]).find(x=>x.title);
   if(!hit) return null;
-  return discogsSearchToFields(hit, bc);
+  return await discogsEnrich(hit, bc);
 }
-/* Ricerca da barcode: Discogs (search, se token) per i dati + MusicBrainz per la
-   tracklist; ripiego completo su MusicBrainz se Discogs non trova nulla. */
+/* Ricerca da barcode: Discogs (dettaglio, se token); ripiego su MusicBrainz. */
 async function lookupByBarcode(bc){
   let dg = null;
   try{ dg = await discogsByBarcode(bc); }catch(e){}
-  let mb = null;
+  if(dg && (dg['Titolo']||dg['Artista'])) return { data: dg, fonte: 'Discogs' };
   try{
     const releases = await mbSearchRelease('barcode:'+bc);
-    if(releases.length){ let r = releases[0]; try{ r = await mbRelease(r.id); }catch(e){} mb = mbToFields(r, bc); }
+    if(releases.length){ let r = releases[0]; try{ r = await mbRelease(r.id); }catch(e){} const mb = mbToFields(r, bc); if(mb['Titolo']||mb['Artista']) return { data: mb, fonte: 'MusicBrainz' }; }
   }catch(e){}
-  if(dg && (dg['Titolo']||dg['Artista'])){
-    let fonte = 'Discogs';
-    if(!dg['Tracklist'] && mb && mb['Tracklist']){ dg['Tracklist'] = mb['Tracklist']; fonte = 'Discogs + MusicBrainz'; }
-    return { data: dg, fonte };
-  }
-  if(mb && (mb['Titolo']||mb['Artista'])) return { data: mb, fonte: 'MusicBrainz' };
   return null;
 }
 /* Ricerca per NUMERO DI CATALOGO dell'etichetta (es. "206 285-620"): utile per i
@@ -1849,36 +1914,39 @@ async function discogsByCatno(cn){
   const j = await r.json();
   const hit = (j.results||[]).find(x=>x.title);
   if(!hit) return null;
-  return discogsSearchToFields(hit, '');
+  return await discogsEnrich(hit, '');
 }
 async function lookupByCatno(cn){
   cn = (cn||'').trim();
   if(cn.length < 2) return null;
   let dg = null;
   try{ dg = await discogsByCatno(cn); }catch(e){}
-  let mb = null;
+  if(dg && (dg['Titolo']||dg['Artista'])){
+    if(!dg['Codice di catalogo']) dg['Codice di catalogo'] = cn;
+    return { data: dg, fonte: 'Discogs' };
+  }
   try{
     const j = await mbGet('release?query=' + encodeURIComponent('catno:"'+cn+'"') + '&limit=5');
     const rel0 = (j.releases||[])[0];
-    if(rel0){ let r = rel0; try{ r = await mbRelease(rel0.id); }catch(e){} mb = mbToFields(r, ''); }
+    if(rel0){ let r = rel0; try{ r = await mbRelease(rel0.id); }catch(e){} const mb = mbToFields(r, ''); if(mb['Titolo']||mb['Artista']){ if(!mb['Codice di catalogo']) mb['Codice di catalogo']=cn; return { data: mb, fonte:'MusicBrainz' }; } }
   }catch(e){}
-  if(dg && (dg['Titolo']||dg['Artista'])){
-    let fonte = 'Discogs';
-    if(!dg['Tracklist'] && mb && mb['Tracklist']){ dg['Tracklist'] = mb['Tracklist']; fonte = 'Discogs + MusicBrainz'; }
-    if(!dg['Codice di catalogo']) dg['Codice di catalogo'] = cn;
-    return { data: dg, fonte };
-  }
-  if(mb && (mb['Titolo']||mb['Artista'])){
-    if(!mb['Codice di catalogo']) mb['Codice di catalogo'] = cn;
-    return { data: mb, fonte: 'MusicBrainz' };
-  }
   return null;
 }
 /* Cerca da barcode OPPURE da numero di catalogo (rileva automaticamente). */
+/* Estrae l'eventuale URL copertina Discogs dai dati e lo mette in coda per
+   l'upload (solo se non c'è già una foto caricata dall'utente). */
+function estraiCover(data){
+  if(data && data['_cover']){
+    if(!_pendingCover) _pendingCoverUrl = data['_cover'];
+    delete data['_cover'];
+  }
+  return data;
+}
 async function cercaDaBarcode(){
   const inp = document.getElementById('mus-barcode-input'), st = document.getElementById('mus-bc-status');
   const raw = (inp ? inp.value : '').trim();
   if(!raw){ if(st) st.textContent = 'Inserisci un codice a barre o un numero di catalogo.'; return; }
+  _pendingCover = null; _pendingCoverUrl = null;
   const soloCifre = raw.replace(/[^0-9]/g,'');
   const pareBarcode = /^[0-9\s]+$/.test(raw) && soloCifre.length >= 8; // solo cifre/spazi
   if(st) st.textContent = '🔎 Cerco «'+esc(raw)+'»…';
@@ -1894,8 +1962,10 @@ async function cercaDaBarcode(){
     openObjForm('musica', null, pareBarcode ? {'Codice a barre': soloCifre} : {'Codice di catalogo': raw});
     return;
   }
-  if(st) st.innerHTML = '✅ Trovato su '+res.fonte+': <b>'+esc(res.data['Titolo']||'')+'</b> — '+esc(res.data['Artista']||'')+'. Verifica e salva.';
-  openObjForm('musica', null, res.data);
+  const conCover = !!(res.data && res.data['_cover']);
+  if(st) st.innerHTML = '✅ Trovato su '+res.fonte+': <b>'+esc(res.data['Titolo']||'')+'</b> — '+esc(res.data['Artista']||'')+'.'
+    + (conCover ? ' Copertina inclusa.' : '') + ' Verifica e salva.';
+  openObjForm('musica', null, estraiCover(res.data));
 }
 async function analizzaCopertina(fileList){
   const files = [...fileList].filter(f => f.type.startsWith('image/') || isPDF(f));
@@ -1914,7 +1984,7 @@ async function analizzaCopertina(fileList){
       const res = await lookupByBarcode(bc);
       if(res){
         if(st) st.innerHTML = '✅ Trovato su ' + res.fonte + ': <b>' + esc(res.data['Titolo']||'') + '</b> — ' + esc(res.data['Artista']||'') + '. Verifica e salva.';
-        openObjForm('musica', null, res.data);
+        openObjForm('musica', null, estraiCover(res.data));
         return;
       }
     }
