@@ -1140,6 +1140,20 @@ async function stampaScheda(catKey, id){
     rows.push([fld.l, String(disp)]);
   }
   if((f['Collocazione']||[]).length) rows.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
+  // Se il campo biografico proprio dell'opera è vuoto, usa la biografia dell'autore collegato in archivio.
+  if(cat.autore){
+    let aid = (f[AUTORE_LINK]||[])[0];
+    if(!aid && f[cat.sub]){ const m = autori.find(a=>(a.fields['Nome']||'').toLowerCase()===String(f[cat.sub]).toLowerCase()); if(m) aid = m.id; }
+    const a = aid && autoreById(aid);
+    const bioFld = (cat.campi||[]).find(x=> /biografic/i.test(x.k));
+    const bioPropria = bioFld ? String(f[bioFld.k]||'').trim() : '';
+    if(a && !bioPropria && String(a.fields['Biografia']||'').trim()){
+      const af = a.fields, date = [af['Nascita'], af['Morte']].filter(Boolean).join(' – ');
+      const intest = [af['Nome'], [date, af['Nazionalità']].filter(Boolean).join(' · ')].filter(Boolean).join(' — ');
+      const testo = (intest ? intest + '\n\n' : '') + af['Biografia'] + (af['Note'] ? '\n\n' + af['Note'] : '');
+      blocks.push([ bioFld ? bioFld.l : 'Biografia dell’autore', testo ]);
+    }
+  }
   const code = codeStr(cat, f), titolo = f['Titolo']||'', autore = f[cat.sub]||'';
 
   // incorpora la foto (host Airtable con CORS aperto → canvas non "tainted")
