@@ -439,6 +439,8 @@ let loaded = false;
 let scanInCorso = false;   // usato dal controllo versione per non interrompere una scansione
 let _pendingCover = null;  // copertina analizzata da caricare dopo la creazione di un supporto musicale
 let _pendingCoverUrl = null; // URL copertina da Discogs, allegata dopo il salvataggio
+let _ofCat = null, _ofId = null, _ofWasNew = false;  // stato modale (per autosalvataggio)
+let _autosaveTimer = null, _autosaveBusy = false, _autosavePending = false, _savedTimer = null;
 let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
@@ -1139,6 +1141,7 @@ async function stampaScheda(catKey, id){
 
 function openObjForm(catKey, id, prefill){
   const cat = catByKey(catKey);
+  _ofCat = catKey; _ofId = id || null; _ofWasNew = !id;   // stato per l'autosalvataggio
   const o = id ? objById(catKey, id) : null;
   const f = o ? o.fields : (prefill||{});
   const campo = fld => {
@@ -1156,9 +1159,9 @@ function openObjForm(catKey, id, prefill){
   };
   modal(`
     <h2>${o?'Modifica':'Nuovo'} — ${esc(cat.label)}</h2>
-    <div class="frow">
+    <div class="frow" onfocusout="autosalva()">
       <div class="field"><label>Codice di catalogo</label>
-        <input value="${o?esc(codeStr(cat,f)):''}" readonly placeholder="${o?'—':cat.prefix+'- (al salvataggio)'}"
+        <input id="of-code-disp" value="${o?esc(codeStr(cat,f)):''}" readonly placeholder="${o?'—':cat.prefix+'- (al salvataggio)'}"
                title="Assegnato automaticamente dall'app. Non modificabile."></div>
       ${cat.musica ? `<div class="field"><label>Numero posizione</label><input id="of-${cssId('Numero posizione')}" value="${escAttr(f['Numero posizione']||'')}"></div>` : ''}
       <div class="field" style="grid-column:1/-1"><label>Titolo / denominazione *</label><input id="of-titolo" value="${escAttr(f['Titolo']||'')}"></div>
@@ -1168,8 +1171,9 @@ function openObjForm(catKey, id, prefill){
     </div>
     <p class="note">${o?'':'📷 Dopo il salvataggio si apre la scheda per aggiungere fotografie e documenti.'}</p>
     <div class="modal-actions">
-      <button class="btn secondary" onclick="closeModal()">Annulla</button>
-      <button class="btn" onclick="saveObj('${cat.key}',${o?`'${id}'`:'null'})">💾 Salva</button>
+      <span id="of-saved" style="margin-right:auto; font-size:12px; color:var(--muted); opacity:.55">✓ salvataggio automatico attivo</span>
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+      <button class="btn" onclick="salvaModale()">💾 Salva e chiudi</button>
     </div>`);
 }
 
@@ -1198,12 +1202,10 @@ function trovaDoppioneMusica(fields, escludiId){
   }
   return null;
 }
-async function saveObj(catKey, id){
-  const cat = catByKey(catKey);
+/* Legge tutti i campi della modale in un oggetto fields. */
+function raccogliCampi(cat){
   const g = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
-  const titolo = g('of-titolo');
-  if(!titolo){ toast('Il titolo è obbligatorio'); return; }
-  const fields = { 'Titolo': titolo };
+  const fields = { 'Titolo': g('of-titolo') };
   for(const fld of cat.campi){
     if(fld.k==='Note') continue;
     const raw = g('of-' + cssId(fld.k));
@@ -1213,6 +1215,59 @@ async function saveObj(catKey, id){
   const collSel = g('of-coll');
   fields['Collocazione'] = collSel ? [collSel] : [];
   fields['Note'] = (document.getElementById('of-note')||{}).value || '';
+  return fields;
+}
+function _feedbackSalvato(){
+  const el = document.getElementById('of-saved'); if(!el) return;
+  el.textContent = '✓ salvato'; el.style.opacity = '1';
+  clearTimeout(_savedTimer);
+  _savedTimer = setTimeout(()=>{ if(el){ el.textContent = '✓ salvataggio automatico attivo'; el.style.opacity = '.55'; } }, 1400);
+}
+function _aggiornaCodiceModale(cat, recFields){
+  const el = document.getElementById('of-code-disp'); if(el) el.value = codeStr(cat, recFields) || '';
+  const h = document.querySelector('#modal-root h2'); if(h) h.textContent = 'Modifica — ' + cat.label;
+}
+/* Autosalvataggio: chiamato all'uscita da ogni campo (blur), con debounce. */
+function autosalva(){ clearTimeout(_autosaveTimer); _autosaveTimer = setTimeout(_doAutosalva, 400); }
+async function _doAutosalva(){
+  if(!_ofCat) return;
+  if(_autosaveBusy){ _autosavePending = true; return; }
+  const cat = catByKey(_ofCat);
+  const fields = raccogliCampi(cat);
+  if(!fields['Titolo']) return;                 // senza titolo non si salva
+  if(_ofCat==='musica' && !_ofId) return;       // musica nuovo: salvataggio esplicito (doppioni + copertina)
+  _autosaveBusy = true;
+  try{
+    if(_ofId){
+      const j = await updateRec(cat.tbl, _ofId, fields);
+      patchRec(_ofCat, _ofId, j);
+    } else {
+      const [rec] = await creaInTabella(cat.tbl, [fields]);
+      objs[_ofCat].push(rec);
+      _ofId = rec.id;
+      _aggiornaCodiceModale(cat, rec.fields);
+    }
+    _feedbackSalvato();
+    fillFilters(); renderAll();
+  }catch(e){ const el=document.getElementById('of-saved'); if(el){ el.textContent = '⚠️ ' + (e.message||'errore di salvataggio'); el.style.opacity = '1'; } }
+  _autosaveBusy = false;
+  if(_autosavePending){ _autosavePending = false; _doAutosalva(); }
+}
+/* Pulsante "Salva e chiudi". */
+async function salvaModale(){
+  if(_ofCat==='musica' && !_ofId) return saveObj('musica', null);   // flusso completo per i dischi nuovi
+  if(!raccogliCampi(catByKey(_ofCat))['Titolo']){ toast('Il titolo è obbligatorio'); return; }
+  const wasNew = _ofWasNew, catKey = _ofCat;
+  await _doAutosalva();
+  const rid = _ofId;
+  closeModal();
+  toast('💾 Scheda salvata');
+  if(wasNew && rid) openObjDetail(catKey, rid);   // apri la scheda per foto/documenti
+}
+async function saveObj(catKey, id){
+  const cat = catByKey(catKey);
+  const fields = raccogliCampi(cat);
+  if(!fields['Titolo']){ toast('Il titolo è obbligatorio'); return; }
   // Blocca i doppioni dei supporti musicali (stesso barcode, o catalogo+etichetta, o titolo+artista)
   if(catKey==='musica' && !id){
     const dup = trovaDoppioneMusica(fields);
@@ -2327,7 +2382,7 @@ function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
 function modal(html, wide){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal${wide?' wide':''}">${html}</div></div>`; }
-function closeModal(){ document.getElementById('modal-root').innerHTML=''; _pendingCover=null; }
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; _pendingCover=null; _ofCat=null; _ofId=null; _ofWasNew=false; clearTimeout(_autosaveTimer); _autosaveBusy=false; _autosavePending=false; }
 let toastTimer;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500); }
 
