@@ -214,6 +214,12 @@
       <button id="sez-add" class="btn" onclick="aggiungiSezioneCorrente()">➕ Aggiungi</button>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
     </div>
+    <div class="toolbar" id="music-filters" style="display:none">
+      <select id="mf-supporto" onchange="renderCatalog()"><option value="">Formato/Supporto: tutti</option></select>
+      <select id="mf-genere" onchange="renderCatalog()"><option value="">Genere: tutti</option></select>
+      <select id="mf-autore" onchange="renderCatalog()"><option value="">Autore: tutti</option></select>
+      <button class="btn secondary small" onclick="resetFiltriMusica()">↺ Azzera filtri</button>
+    </div>
     <div class="counts" id="count"></div>
     <div id="catalog" class="grid"></div>
     <div id="catalog-empty" class="empty hidden">Nessun oggetto trovato.</div>
@@ -694,12 +700,37 @@ function snippetMatch(cat, rec, termini){
   }
   return out.slice(0,2);
 }
+function _distinti(recs, getter, split){
+  const s = new Set();
+  recs.forEach(r=>{ const v = getter(r.fields||{}); if(!v && v!==0) return;
+    if(split){ String(v).split(/\s*,\s*/).forEach(t=>{ t=t.trim(); if(t) s.add(t); }); }
+    else s.add(String(v).trim());
+  });
+  return [...s].filter(Boolean).sort((a,b)=>a.localeCompare(b,'it'));
+}
+function popolaFiltriMusica(){
+  const recs = objs.musica || [];
+  const fill = (id, opts, label) => {
+    const sel = document.getElementById(id); if(!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${label}</option>` + opts.map(o=>`<option${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+  };
+  fill('mf-supporto', _distinti(recs, f=>f['Tipologia supporto']), 'Formato/Supporto: tutti');
+  fill('mf-genere',  _distinti(recs, f=>f['Genere musicale'], true), 'Genere: tutti');
+  fill('mf-autore',  _distinti(recs, f=>f['Artista']), 'Autore: tutti');
+}
+function resetFiltriMusica(){
+  ['mf-supporto','mf-genere','mf-autore'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
+  renderCatalog();
+}
 function renderCatalog(){
   const toolbar = document.querySelector('#view-catalogo .toolbar');
   const cont = document.getElementById('catalog');
+  const mfBox = document.getElementById('music-filters');
   // MAIN PAGE: nessuna sezione selezionata → mostra le sezioni, niente anteprime.
   if(!catFiltro){
     if(toolbar) toolbar.style.display = 'none';
+    if(mfBox) mfBox.style.display = 'none';
     cont.className = 'sezioni';
     cont.innerHTML = CAT.map(c=>{
       const n = contaCat(c.key);
@@ -717,12 +748,21 @@ function renderCatalog(){
   cont.className = 'grid';
   const _cc = catByKey(catFiltro), _ba = document.getElementById('sez-add');
   if(_ba) _ba.textContent = '➕ Aggiungi ' + (_cc ? _cc.sing : '');
+  if(catFiltro==='musica'){ if(mfBox){ mfBox.style.display=''; popolaFiltriMusica(); } }
+  else if(mfBox) mfBox.style.display = 'none';
   const q = (document.getElementById('q').value||'').toLowerCase().trim();
   const termini = q.split(/\s+/).filter(Boolean);
   const fc = document.getElementById('f-coll').value;
   const sort = document.getElementById('f-sort').value;
   let list = tuttiOggetti();
   if(catFiltro) list = list.filter(x=>x.cat.key===catFiltro);
+  if(catFiltro==='musica'){
+    const gv = id => (document.getElementById(id)||{}).value || '';
+    const fS=gv('mf-supporto'), fG=gv('mf-genere'), fA=gv('mf-autore');
+    if(fS) list = list.filter(x=> String(x.rec.fields['Tipologia supporto']||'')===fS);
+    if(fG) list = list.filter(x=> String(x.rec.fields['Genere musicale']||'').split(/\s*,\s*/).map(t=>t.trim()).includes(fG));
+    if(fA) list = list.filter(x=> String(x.rec.fields['Artista']||'')===fA);
+  }
   if(fc) list = list.filter(x=>(x.rec.fields['Collocazione']||[]).includes(fc));
   if(termini.length) list = list.filter(({cat,rec})=>{
     const hay = testoCercabile(cat, rec);
