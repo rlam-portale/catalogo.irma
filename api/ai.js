@@ -81,7 +81,7 @@ Se non riesci a identificare l'autore, lascia "autore" con i soli campi che cono
     model: process.env.AI_MODEL || 'claude-sonnet-5',
     max_tokens: 4096,
     system,
-    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }, ...(imgBlock ? [imgBlock] : [])] }]
   };
 

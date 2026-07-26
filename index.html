@@ -1159,7 +1159,15 @@ async function avviaAi(catKey, id){
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
       body: JSON.stringify({ catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, campi, currentFields:curr, autore }) });
     if(r.status===401){ chiediPassword(); return; }
-    const j = await r.json();
+    const txt = await r.text();
+    let j = null; try{ j = JSON.parse(txt); }catch(e){}
+    if(!j){
+      const timeout = r.status===504 || /timeout|timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(txt);
+      const msg = timeout
+        ? 'L\'analisi ha superato il tempo massimo del server (timeout ~60s): l\'immagine + ricerca web era troppo lunga. Riprova — spesso al secondo tentativo va a buon fine.'
+        : ('Il server AI ha risposto in modo inatteso (HTTP '+r.status+'): '+esc(txt.slice(0,160)));
+      if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+msg+'</p>'; return;
+    }
     if(!r.ok){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc((j.error&&j.error.message)||'Errore')+'</p>'; return; }
     _aiRes = { catKey, id, ...(j.result||{}) };
     renderAiPreview();
