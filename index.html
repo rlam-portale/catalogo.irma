@@ -1153,7 +1153,7 @@ async function avviaAi(catKey, id){
   const aid = (f[AUTORE_LINK]||[])[0]; const a = aid && autoreById(aid);
   if(a){ ['Nome','Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{ if(a.fields[k]) autore[k]=a.fields[k]; }); }
   const out = document.getElementById('ai-out');
-  const btn = document.getElementById('ai-go'); if(btn){ btn.disabled=true; btn.textContent='⏳ Analisi in corso… (fino a un minuto)'; }
+  const btn = document.getElementById('ai-go'); if(btn){ btn.disabled=true; btn.textContent='⏳ Analisi in corso… (può richiedere qualche minuto)'; }
   if(out) out.innerHTML = '<p class="note">🌐 Osservo l\'immagine e cerco sul web…</p>';
   try{
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
@@ -1164,7 +1164,7 @@ async function avviaAi(catKey, id){
     if(!j){
       const timeout = r.status===504 || /timeout|timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(txt);
       const msg = timeout
-        ? 'L\'analisi ha superato il tempo massimo del server (timeout ~60s): l\'immagine + ricerca web era troppo lunga. Riprova — spesso al secondo tentativo va a buon fine.'
+        ? 'L\'analisi ha superato il tempo massimo del server (timeout): l\'immagine + ricerca web era troppo lunga. Riprova — spesso al secondo tentativo va a buon fine.'
         : ('Il server AI ha risposto in modo inatteso (HTTP '+r.status+'): '+esc(txt.slice(0,160)));
       if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+msg+'</p>'; return;
     }

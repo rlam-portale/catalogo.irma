@@ -1,7 +1,7 @@
 // Catalogazione assistita dall'AI (Claude vision + ricerca web).
 // Riceve l'immagine dell'opera, indicazioni preliminari e lo schema dei campi;
 // fa ricerche sul web e restituisce un JSON con i campi dell'opera + la scheda autore.
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
   const pw = req.headers['x-app-password'] || '';
@@ -81,7 +81,7 @@ Se non riesci a identificare l'autore, lascia "autore" con i soli campi che cono
     model: process.env.AI_MODEL || 'claude-sonnet-5',
     max_tokens: 4096,
     system,
-    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }, ...(imgBlock ? [imgBlock] : [])] }]
   };
 
