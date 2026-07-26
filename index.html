@@ -1123,24 +1123,20 @@ function openObjDetail(catKey, id){
 
 /* PDF vero della scheda (jsPDF): testata + piede con numero di pagina ripetuti
    su ogni pagina, immagine incorporata, timbro rotondo di proprietà sull'ultima. */
-/* Rimuove la formattazione Markdown/wiki dal testo (per la stampa in chiaro). */
-function stripMD(s){
-  return String(s||'')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')          // immagini ![]()
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')        // link [testo](url) → testo
-    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')          // code `...`
-    .replace(/\*\*([^*]+)\*\*/g, '$1')              // **grassetto**
-    .replace(/__([^_]+)__/g, '$1')                  // __grassetto__
-    .replace(/'''([^']+)'''/g, '$1')                // '''grassetto''' (wiki)
-    .replace(/''([^']+)''/g, '$1')                  // ''corsivo'' (wiki)
-    .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1$2')     // *corsivo*
-    .replace(/(^|[\s(])_([^_\n]+)_/g, '$1$2')       // _corsivo_
-    .replace(/^\s{0,3}#{1,6}\s*/gm, '')             // # titoli
-    .replace(/^\s{0,3}>\s?/gm, '')                  // > citazioni
-    .replace(/^\s{0,3}[-*+]\s+/gm, '• ')            // elenchi → •
-    .replace(/\[\d+\]/g, '')                        // riferimenti [1]
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+/* Spezza una riga in run stilate (grassetto/corsivo) interpretando il Markdown. */
+function mdInlineRuns(s){
+  s = String(s||'').replace(/!\[[^\]]*\]\([^)]*\)/g,'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1'); // img via, link → testo
+  const out=[]; let i=0, buf='', b=false, it=false;
+  const push=()=>{ if(buf){ out.push({t:buf, b, i:it}); buf=''; } };
+  const at=(m)=> s.startsWith(m,i);
+  while(i<s.length){
+    if(at('**')||at('__')||at("'''")){ push(); b=!b; i += at("'''")?3:2; continue; }
+    if(at('*')||at("''")){ push(); it=!it; i += at("''")?2:1; continue; }
+    if(at('`')){ i++; continue; }
+    buf += s[i++];
+  }
+  push();
+  return out.length ? out : [{t:'', b:false, i:false}];
 }
 async function stampaScheda(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
@@ -1150,13 +1146,13 @@ async function stampaScheda(catKey, id){
   for(const fld of cat.campi){
     if(fld.k==='Stato di conservazione') continue;
     const v = f[fld.k]; if(v===undefined || v===null || v==='') continue;
-    if(fld.t==='area'){ blocks.push([fld.l, stripMD(v)]); continue; }
+    if(fld.t==='area'){ blocks.push([fld.l, String(v)]); continue; }
     let disp = v;
     if(fld.t==='date') disp = fmtDate(v);
     else if(fld.t==='cur') disp = fmtCur(v);
     else if(fld.t==='num' && /cm$/.test(fld.k)) disp = v + ' cm';
     else if(fld.t==='num' && /kg$/.test(fld.k)) disp = v + ' kg';
-    rows.push([fld.l, stripMD(String(disp))]);
+    rows.push([fld.l, String(disp)]);
   }
   if((f['Collocazione']||[]).length) rows.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
   // Se il campo biografico proprio dell'opera è vuoto, usa la biografia dell'autore collegato in archivio.
@@ -1169,7 +1165,7 @@ async function stampaScheda(catKey, id){
     if(a && !bioPropria && String(a.fields['Biografia']||'').trim()){
       const af = a.fields, date = [af['Nascita'], af['Morte']].filter(Boolean).join(' – ');
       const intest = [af['Nome'], [date, af['Nazionalità']].filter(Boolean).join(' · ')].filter(Boolean).join(' — ');
-      const testo = (intest ? intest + '\n\n' : '') + stripMD(af['Biografia']) + (af['Note'] ? '\n\n' + stripMD(af['Note']) : '');
+      const testo = (intest ? intest + '\n\n' : '') + (af['Biografia']||'') + (af['Note'] ? '\n\n' + af['Note'] : '');
       blocks.push([ bioFld ? bioFld.l : 'Biografia dell’autore', testo ]);
     }
   }
@@ -1204,6 +1200,78 @@ async function stampaScheda(catKey, id){
   const ensure = h => { if(y+h>BOT){ doc.addPage(); header(); y=TOP; } };
   header();
 
+  // --- rendering Markdown (grassetto/corsivo/titoli/elenchi) nei testi lunghi ---
+  const mmPt = 0.3528;
+  function setRunFont(b,it){
+    const style = b&&it ? 'bolditalic' : b ? 'bold' : it ? 'italic' : 'normal';
+    doc.setFont('times', style);
+  }
+  // disegna una riga di runs con a-capo per parole, aggiornando y
+  function drawInline(runs, x0, maxW, size, color){
+    doc.setFontSize(size); doc.setTextColor(color[0],color[1],color[2]);
+    const lineH = size*mmPt*1.5;
+    let x = x0, first = true;
+    const nl = ()=>{ y += lineH; x = x0; first = true; };
+    ensure(lineH);
+    runs.forEach(run=>{
+      setRunFont(run.b, run.i);
+      // spezza il run in parole conservando gli spazi
+      const parts = String(run.t).split(/(\s+)/);
+      parts.forEach(tok=>{
+        if(tok==='') return;
+        if(/^\s+$/.test(tok)){ if(!first){ x += doc.getTextWidth(' '); } return; }
+        let w = doc.getTextWidth(tok);
+        if(w > maxW){
+          // parola più lunga della riga: spezza a caratteri
+          let chunk='';
+          for(const ch of tok){
+            if(doc.getTextWidth(chunk+ch) > maxW && chunk){
+              if(x+doc.getTextWidth(chunk) > x0+maxW || !first){ }
+              ensure(lineH); doc.text(chunk, x, y); nl(); chunk=ch;
+            } else chunk += ch;
+          }
+          if(chunk){ if(x+doc.getTextWidth(chunk) > x0+maxW && !first) nl(); ensure(lineH); doc.text(chunk, x, y); x += doc.getTextWidth(chunk); first=false; }
+          return;
+        }
+        if(x + w > x0 + maxW && !first) nl();
+        ensure(lineH); doc.text(tok, x, y); x += w; first = false;
+      });
+    });
+    y += lineH; // fine paragrafo → vai a capo
+  }
+  function drawMarkdown(testo){
+    const lines = String(testo||'').replace(/\r/g,'').split('\n');
+    lines.forEach(raw=>{
+      const line = raw.replace(/\s+$/,'');
+      if(!line.trim()){ y += 2.5; return; } // riga vuota = spazio
+      let m;
+      if((m = line.match(/^(#{1,6})\s+(.*)$/))){
+        const lvl = m[1].length;
+        const size = [15,13.5,12.5,11.5,11,11][lvl-1];
+        y += 1.5;
+        drawInline(mdInlineRuns(m[2]).map(r=>({...r,b:true})), M, CW, size, ink);
+        return;
+      }
+      if((m = line.match(/^>\s?(.*)$/))){
+        drawInline(mdInlineRuns(m[1]), M+5, CW-5, 10.5, muted);
+        return;
+      }
+      if((m = line.match(/^\s*[-*+]\s+(.*)$/))){
+        doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(ink[0],ink[1],ink[2]);
+        ensure(5); doc.text('•', M+2, y);
+        drawInline(mdInlineRuns(m[1]), M+7, CW-7, 10.5, ink);
+        return;
+      }
+      if((m = line.match(/^\s*(\d+)[.)]\s+(.*)$/))){
+        doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(ink[0],ink[1],ink[2]);
+        ensure(5); doc.text(m[1]+'.', M+2, y);
+        drawInline(mdInlineRuns(m[2]), M+9, CW-9, 10.5, ink);
+        return;
+      }
+      drawInline(mdInlineRuns(line), M, CW, 10.5, ink);
+    });
+  }
+
   // titolo + autore
   doc.setFont('times','bold'); doc.setFontSize(19); doc.setTextColor(ink[0],ink[1],ink[2]);
   doc.splitTextToSize(titolo, CW).forEach(l=>{ ensure(8); doc.text(l, M, y+6); y+=8; });
@@ -1232,8 +1300,7 @@ async function stampaScheda(catKey, id){
     doc.text(String(k).toUpperCase(), M, y+3); doc.setCharSpace(0);
     doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.2); doc.line(M, y+4.6, W-M, y+4.6);
     y += 8;
-    doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(ink[0],ink[1],ink[2]);
-    doc.splitTextToSize(String(v).replace(/\r/g,''), CW).forEach(l=>{ ensure(5); doc.text(l, M, y+3.6); y+=5; });
+    drawMarkdown(String(v));
     y += 5;
   });
 
