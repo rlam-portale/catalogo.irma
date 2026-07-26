@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "functions": {
-    "api/*.js": { "maxDuration": 30 }
+    "api/ai.js": { "maxDuration": 60 },
+    "api/airtable.js": { "maxDuration": 30 },
+    "api/upload.js": { "maxDuration": 30 },
+    "api/discogs.js": { "maxDuration": 30 }
   }
 }

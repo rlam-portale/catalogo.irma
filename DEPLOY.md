@@ -20,6 +20,8 @@ password una volta (viene ricordata sul dispositivo) e funziona.
 | `AIRTABLE_BASE`  | `appI6zidIy0DriyoG` (la base "Biblioteca Personale") |
 | `DISCOGS_TOKEN`  | token Discogs (facoltativo, migliora il riconoscimento dischi) |
 | `APP_PASSWORD`   | la password condivisa che digiterai in famiglia |
+| `ANTHROPIC_API_KEY` | chiave API Anthropic — serve alla catalogazione assistita dall'AI (quadri). Creala su https://console.anthropic.com |
+| `AI_MODEL` | facoltativo. Default `claude-sonnet-5`; per la massima qualità metti `claude-opus-4-8` |
 
 Dopo averle inserite fai **Redeploy** (le env si applicano al deploy successivo).
 

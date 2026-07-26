@@ -428,7 +428,7 @@ Object.keys(CAMPI).forEach(k => CAMPI[k] = CAMPI[k].concat(CAMPI_COMUNI));
 /* Categorie del catalogo. 'biblio' marca i Libri, che tengono ISBN/scansioni/CSV/prestiti/wishlist. */
 const CAT = [
   {key:'libri',     tbl:'Libri',     label:'Libri',                    plur:'libri',     sing:'libro',    prefix:'BIB', icon:'📚', sub:'Autore',       foto:'Scansioni', biblio:true},
-  {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri, autore:true},
+  {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri, autore:true, ai:true},
   {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti},
   {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture, autore:true},
   {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili},
@@ -1106,10 +1106,146 @@ function openObjDetail(catKey, id){
     ${mediaSection(cat, o)}
     <div class="modal-actions">
       <button class="btn danger small left" onclick="delObj('${cat.key}','${id}')">Elimina</button>
+      ${cat.ai?`<button class="btn secondary" onclick="openAiCompila('${cat.key}','${id}')">🤖 Compila con AI</button>`:''}
       <button class="btn secondary" onclick="stampaScheda('${cat.key}','${id}')">🖨 Stampa scheda (PDF)</button>
       <button class="btn secondary" onclick="openObjForm('${cat.key}','${id}')">✏️ Modifica</button>
       <button class="btn" onclick="closeModal()">Chiudi</button>
     </div>`, true);
+}
+
+/* ================== CATALOGAZIONE ASSISTITA DALL'AI ================== */
+let _aiRes = null;
+function _imgUrlRecord(cat, f){ const a=(f[cat.foto]||[])[0]; return a ? ((a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url) : ''; }
+function openAiCompila(catKey, id){
+  const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
+  const f = o.fields; const img = _imgUrlRecord(cat, f);
+  const seed = [];
+  if(f['Attribuzione']) seed.push('Attribuzione: '+f['Attribuzione']);
+  if(f[cat.sub]) seed.push('Autore ipotizzato: '+f[cat.sub]);
+  if(f['Epoca']) seed.push('Epoca: '+f['Epoca']);
+  _aiRes = null;
+  modal(`
+    <h2>🤖 Catalogazione assistita — ${esc(cat.label)}</h2>
+    <div class="detail" style="grid-template-columns:auto 1fr; gap:16px; align-items:start">
+      <div class="cover" style="width:min(240px,40vw)">${img?`<img src="${esc(img)}">`:`<div class="noimg">nessuna foto</div>`}</div>
+      <div class="meta">
+        <div class="note">L'AI osserva la foto, fa ricerche sul web e propone i campi della scheda e la biografia dell'autore. Poi scegli cosa applicare; resta tutto modificabile a mano.</div>
+        <div class="field" style="margin-top:10px"><label>Indicazioni preliminari (facoltative)</label>
+          <textarea id="ai-hints" style="min-height:90px" placeholder="Es. «probabile scuola toscana '600», provenienza, firma illeggibile, ipotesi d'autore, note storiche…">${esc(seed.join('. '))}</textarea></div>
+        ${img?'':'<p class="note" style="color:var(--amber)">⚠️ Nessuna fotografia sulla scheda: l\'analisi userà solo le indicazioni testuali. Aggiungi una foto per risultati migliori.</p>'}
+        <div style="margin-top:10px"><button class="btn" id="ai-go" onclick="avviaAi('${catKey}','${id}')">🔎 Avvia analisi AI</button></div>
+      </div>
+    </div>
+    <div id="ai-out" style="margin-top:14px"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="openObjDetail('${catKey}','${id}')">← Torna alla scheda</button>
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+    </div>`, true);
+}
+async function avviaAi(catKey, id){
+  const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
+  const f = o.fields; const imageUrl = _imgUrlRecord(cat, f);
+  const hints = (document.getElementById('ai-hints')||{}).value || '';
+  const skip = new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato']);
+  const campi = cat.campi.filter(c=>!skip.has(c.k)).map(c=>({k:c.k,l:c.l,t:c.t||'text',ch:c.ch}));
+  const curr = { 'Titolo': f['Titolo']||'' };
+  cat.campi.forEach(c=>{ const v=f[c.k]; if(v!==undefined && v!==null && v!=='') curr[c.k]=v; });
+  let autore = {};
+  const aid = (f[AUTORE_LINK]||[])[0]; const a = aid && autoreById(aid);
+  if(a){ ['Nome','Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{ if(a.fields[k]) autore[k]=a.fields[k]; }); }
+  const out = document.getElementById('ai-out');
+  const btn = document.getElementById('ai-go'); if(btn){ btn.disabled=true; btn.textContent='⏳ Analisi in corso… (fino a un minuto)'; }
+  if(out) out.innerHTML = '<p class="note">🌐 Osservo l\'immagine e cerco sul web…</p>';
+  try{
+    const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
+      body: JSON.stringify({ catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, campi, currentFields:curr, autore }) });
+    if(r.status===401){ chiediPassword(); return; }
+    const j = await r.json();
+    if(!r.ok){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc((j.error&&j.error.message)||'Errore')+'</p>'; return; }
+    _aiRes = { catKey, id, ...(j.result||{}) };
+    renderAiPreview();
+  }catch(e){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc(e.message)+'</p>'; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🔁 Rianalizza'; } }
+}
+function renderAiPreview(){
+  const out = document.getElementById('ai-out'); if(!out || !_aiRes) return;
+  const cat = catByKey(_aiRes.catKey); const o = objById(_aiRes.catKey, _aiRes.id); const f = o?o.fields:{};
+  const opera = _aiRes.opera || {};
+  const campoMap = {}; cat.campi.forEach(c=>campoMap[c.k]=c);
+  const rows = [];
+  Object.keys(opera).forEach(k=>{
+    if(k!=='Titolo' && !campoMap[k]) return;               // ignora campi non esistenti in Airtable
+    const prop = opera[k]; if(prop===''||prop==null) return;
+    const cur = (f[k]!==undefined && f[k]!==null) ? f[k] : '';
+    const label = k==='Titolo' ? 'Titolo' : campoMap[k].l;
+    rows.push({k, label, cur, prop, checked:(cur===''||cur==null)});
+  });
+  const au = _aiRes.autore || {};
+  const aid=(f[AUTORE_LINK]||[])[0]; const aRec=aid&&autoreById(aid); const aCur=aRec?aRec.fields:{};
+  const aRows=[];
+  ['Nome','Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{
+    const prop=au[k]; if(prop===''||prop==null) return;
+    const cur=(aCur[k]!==undefined&&aCur[k]!==null)?aCur[k]:'';
+    aRows.push({k,label:k,cur,prop,checked:(cur===''||cur==null)});
+  });
+  const conf=_aiRes.confidenza||''; const confColor= conf==='alta'?'var(--green)':conf==='media'?'var(--amber)':'var(--red)';
+  const fonti=(_aiRes.fonti||[]).filter(Boolean);
+  const rowHtml=(pfx,r,i)=>`<tr>
+    <td style="padding:4px 8px;vertical-align:top"><input type="checkbox" id="${pfx}-${i}" ${r.checked?'checked':''}></td>
+    <td style="padding:4px 8px;font-weight:600;vertical-align:top;white-space:nowrap">${esc(r.label)}</td>
+    <td style="padding:4px 8px;color:var(--muted);vertical-align:top;max-width:180px">${esc(String(r.cur||'—')).slice(0,300)}</td>
+    <td style="padding:4px 8px;vertical-align:top;white-space:pre-wrap">${esc(String(r.prop)).slice(0,1500)}</td></tr>`;
+  out.innerHTML = `
+    <div class="note" style="margin-bottom:6px">Confidenza: <b style="color:${confColor}">${esc(conf||'—')}</b></div>
+    ${_aiRes.riepilogo?`<p class="note" style="margin-bottom:8px; text-align:justify">${esc(_aiRes.riepilogo)}</p>`:''}
+    <div class="seclabel">Campi dell'opera</div>
+    <div style="overflow:auto"><table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr style="color:var(--muted);text-align:left"><th></th><th style="padding:4px 8px">Campo</th><th style="padding:4px 8px">Attuale</th><th style="padding:4px 8px">Proposto dall'AI</th></tr>
+      ${rows.map((r,i)=>rowHtml('aiop',r,i)).join('')||'<tr><td colspan="4" class="note" style="padding:8px">Nessun campo proposto.</td></tr>'}
+    </table></div>
+    ${aRows.length?`<div class="seclabel" style="margin-top:12px">Archivio autori${aRec?' — '+esc(aRec.fields['Nome']||''):' (nuovo)'}</div>
+      <div style="overflow:auto"><table style="border-collapse:collapse;width:100%;font-size:13px">
+        <tr style="color:var(--muted);text-align:left"><th></th><th style="padding:4px 8px">Campo</th><th style="padding:4px 8px">Attuale</th><th style="padding:4px 8px">Proposto</th></tr>
+        ${aRows.map((r,i)=>rowHtml('aiau',r,i)).join('')}
+      </table></div>`:''}
+    ${fonti.length?`<div class="seclabel" style="margin-top:12px">Fonti</div><ul class="note" style="margin:4px 0 0 18px">${fonti.map(u=>`<li><a href="${escAttr(u)}" target="_blank">${esc(u)}</a></li>`).join('')}</ul>`:''}
+    <div style="margin-top:12px"><button class="btn" onclick="applicaAi()">✅ Applica al catalogo</button>
+      <span class="note" style="margin-left:10px">Spunta i campi da salvare (i vuoti sono già selezionati). Restano modificabili a mano.</span></div>`;
+  _aiRes._rows = rows; _aiRes._aRows = aRows;
+}
+function _numFromStr(s){ const m=String(s).replace(',','.').match(/-?\d+(\.\d+)?/); return m?Number(m[0]):null; }
+async function applicaAi(){
+  if(!_aiRes) return;
+  const cat = catByKey(_aiRes.catKey); const id=_aiRes.id; const o=objById(_aiRes.catKey,id); if(!o) return;
+  const f = o.fields; const rows=_aiRes._rows||[], aRows=_aiRes._aRows||[];
+  // 1) autore d'archivio
+  let aid=(f[AUTORE_LINK]||[])[0];
+  const auPatch={};
+  aRows.forEach((r,i)=>{ const cb=document.getElementById('aiau-'+i); if(cb&&cb.checked) auPatch[r.k]=r.prop; });
+  const nomeAI = (_aiRes.autore&&_aiRes.autore.Nome) || auPatch['Nome'] || '';
+  try{
+    if(cat.autore && (Object.keys(auPatch).length || nomeAI)){
+      if(!aid && nomeAI){ const m=autori.find(a=>(a.fields['Nome']||'').toLowerCase()===nomeAI.toLowerCase()); if(m) aid=m.id; }
+      if(aid){
+        if(Object.keys(auPatch).length){ const j=await updateRec(TBL.autori,aid,auPatch); const idx=autori.findIndex(x=>x.id===aid); if(idx>=0) autori[idx]=j; }
+      } else if(nomeAI){
+        const j=await createRec(TBL.autori,{Nome:nomeAI,...auPatch}); autori.push(j.records[0]); aid=j.records[0].id;
+      }
+    }
+  }catch(e){ toast('Autore: '+e.message); }
+  // 2) campi dell'opera + collegamento autore
+  const patch={};
+  rows.forEach((r,i)=>{ const cb=document.getElementById('aiop-'+i); if(!cb||!cb.checked) return;
+    const fld=cat.campi.find(x=>x.k===r.k);
+    patch[r.k] = (fld&&(fld.t==='num'||fld.t==='cur')) ? _numFromStr(r.prop) : String(r.prop);
+  });
+  if(aid){ patch[AUTORE_LINK]=[aid]; if(nomeAI && !f[cat.sub] && patch[cat.sub]===undefined) patch[cat.sub]=nomeAI; }
+  if(!Object.keys(patch).length){ toast('Nessun campo selezionato'); return; }
+  try{
+    const j=await updateRec(cat.tbl,id,patch); patchRec(_aiRes.catKey,id,j);
+    toast('✨ Scheda aggiornata dall\'AI'); fillFilters(); renderAll();
+    openObjDetail(_aiRes.catKey,id);
+  }catch(e){ toast(e.message); }
 }
 
 /* PDF vero della scheda (jsPDF): testata + piede con numero di pagina ripetuti
