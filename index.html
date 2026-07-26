@@ -181,17 +181,13 @@
   <!-- ============ SETUP / IMPOSTAZIONI ============ -->
   <section id="view-impostazioni" class="hidden">
     <div class="setupbox">
-      <h2>Collega Airtable</h2>
-      <p>Per funzionare, l'app ha bisogno di un <b>Personal Access Token</b> di Airtable e dell'<b>ID della base</b>.
-      Crea il token su <a href="https://airtable.com/create/tokens" target="_blank">airtable.com/create/tokens</a> con gli scope
-      <code>data.records:read</code> e <code>data.records:write</code>, limitato alla base "Biblioteca Personale".
-      L'ID base inizia con <code>app…</code> (lo trovi nell'URL della base). I dati restano nel tuo browser.</p>
-      <div class="field"><label>Personal Access Token</label><input type="password" id="cfg-token" placeholder="pat…"></div>
-      <div class="field"><label>ID Base</label><input type="text" id="cfg-base" placeholder="appXXXXXXXXXXXXXX"></div>
-      <div class="field"><label>Token Discogs (opzionale, per i supporti musicali)</label><input type="password" id="cfg-discogs" placeholder="token Discogs">
-        <p class="note" style="margin-top:4px">Migliora nettamente il riconoscimento di dischi e CD dal codice a barre. Crealo su <a href="https://www.discogs.com/settings/developers" target="_blank">discogs.com/settings/developers</a> → «Generate new token». Resta nel tuo browser.</p></div>
+      <h2>Accesso al catalogo</h2>
+      <p>Inserisci la <b>password condivisa</b> del catalogo. Viene ricordata su questo dispositivo:
+      su un nuovo PC (o un nuovo browser) va reinserita una sola volta. Il collegamento ad Airtable
+      e Discogs è gestito dal server, quindi non serve più alcun token qui.</p>
+      <div class="field"><label>Password</label><input type="password" id="cfg-pw" placeholder="password" onkeydown="if(event.key==='Enter')saveConfig()"></div>
       <div style="display:flex; gap:10px; margin-top:6px">
-        <button class="btn" onclick="saveConfig()">Salva e connetti</button>
+        <button class="btn" onclick="saveConfig()">Entra</button>
         <button class="btn secondary" onclick="testConnection()">Prova connessione</button>
       </div>
       <p id="cfg-status" style="margin-top:14px"></p>
@@ -456,32 +452,45 @@ let _autosaveTimer = null, _autosaveBusy = false, _autosavePending = false, _sav
 let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
-const DEFAULT_BASE = 'appI6zidIy0DriyoG'; // Base "Biblioteca Personale"
-/* Corregge la confusione visiva I maiuscola / l minuscola nell'ID base: se il
-   valore inserito coincide (a meno del maiuscolo/minuscolo) con la base nota,
-   usa quella corretta; se vuoto, usa la base predefinita. */
-function normBase(b){
-  b = (b||'').trim();
-  if(!b) return DEFAULT_BASE;
-  if(b.toLowerCase() === DEFAULT_BASE.toLowerCase()) return DEFAULT_BASE;
-  return b;
-}
-function cfg(){ return { token: store('bib_token'), base: store('bib_base') || DEFAULT_BASE }; }
 
-/* ================== API AIRTABLE ================== */
+/* Il token Airtable/Discogs non sta più nel browser: le chiamate passano da un
+   proxy su Vercel (cartella /api) che tiene i token nelle env. Qui teniamo solo
+   la password condivisa del catalogo, ricordata per dispositivo. */
+function appPw(){ return (store('app_pw')||'').trim(); }
+function setAppPw(v){ store('app_pw', (v||'').trim()); }
+/* cfg() è conservata per compatibilità con i vecchi controlli "sei configurato?":
+   token = password inserita, base = costante (il proxy conosce la base vera). */
+function cfg(){ return { token: appPw(), base: 'proxy' }; }
+function chiediPassword(){ show('impostazioni'); const el=document.getElementById('cfg-pw'); if(el){ el.value = appPw(); el.focus(); } }
+
+/* ================== API AIRTABLE (via proxy) ================== */
 async function api(path, opts={}, retry=0){
-  const {token, base} = cfg();
-  if(!token || !base) throw new Error('Configura token e base nelle Impostazioni.');
-  const res = await fetch(`https://api.airtable.com/v0/${base}/${path}`, {
+  const res = await fetch('/api/airtable?p=' + encodeURIComponent(path), {
     ...opts,
-    headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json', ...(opts.headers||{}) }
+    headers:{ 'x-app-password': appPw(), 'Content-Type':'application/json', ...(opts.headers||{}) }
   });
   if(res.status===429 && retry<3){ await new Promise(r=>setTimeout(r,1200)); return api(path,opts,retry+1); }
+  if(res.status===401){ chiediPassword(); throw new Error('Password non valida: reinseriscila nelle Impostazioni.'); }
   if(!res.ok){
     let msg = `Errore Airtable (${res.status})`;
     try{ const j = await res.json(); if(j.error) msg += ': ' + (j.error.message || j.error.type || JSON.stringify(j.error)); }catch(e){}
     throw new Error(msg);
   }
+  return res.json();
+}
+/* chiamata al proxy Discogs (token lato server) */
+async function dgFetch(pathq){
+  return fetch('/api/discogs?p=' + encodeURIComponent(pathq), { headers:{ 'x-app-password': appPw() } });
+}
+/* upload di un allegato via proxy (content.airtable.com) */
+async function proxyUpload(recordId, field, contentType, fileB64, filename){
+  const res = await fetch('/api/upload', {
+    method:'POST',
+    headers:{ 'x-app-password': appPw(), 'Content-Type':'application/json' },
+    body: JSON.stringify({ recordId, field, contentType, file: fileB64, filename })
+  });
+  if(res.status===401){ chiediPassword(); throw new Error('Password non valida.'); }
+  if(!res.ok){ let m='Upload allegato fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
   return res.json();
 }
 async function listAll(table, params=''){
@@ -571,9 +580,7 @@ function show(view){
   document.getElementById('view-'+view).classList.remove('hidden');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   if(view==='impostazioni'){
-    document.getElementById('cfg-token').value = cfg().token || '';
-    document.getElementById('cfg-base').value  = cfg().base  || '';
-    document.getElementById('cfg-discogs').value = store('discogs_token') || '';
+    const el = document.getElementById('cfg-pw'); if(el) el.value = appPw();
   }
   if(view==='catalogo') catFiltro = '';   // aprendo "Catalogo" si torna alla main page (sezioni)
   if(['catalogo','prestiti','wishlist','collocazioni','autori'].includes(view)) loadAll();
@@ -584,38 +591,22 @@ function show(view){
 
 /* ================== IMPOSTAZIONI ================== */
 function saveConfig(){
-  let t = document.getElementById('cfg-token').value.trim();
-  if(!t) t = (store('bib_token')||''); // riusa il token Airtable già salvato
-  if(!t){ toast('Inserisci il Personal Access Token di Airtable'); return; }
-  const b = normBase(document.getElementById('cfg-base').value);
-  document.getElementById('cfg-base').value = b; // mostra la base corretta
-  store('bib_token', t); store('bib_base', b);
-  const dg = document.getElementById('cfg-discogs'); if(dg) store('discogs_token', dg.value.trim());
+  const pw = (document.getElementById('cfg-pw').value||'').trim();
+  if(!pw){ toast('Inserisci la password'); return; }
+  setAppPw(pw);
   testConnection(true);
 }
 async function testConnection(goCatalog){
   const st = document.getElementById('cfg-status');
-  // Usa sempre i valori attualmente nei campi (evita di testare un token vecchio)
-  const tf = (document.getElementById('cfg-token')||{}).value;
-  const bfEl = document.getElementById('cfg-base');
-  if(tf && tf.trim()) store('bib_token', tf.trim());
-  if(bfEl){ const nb = normBase(bfEl.value); bfEl.value = nb; store('bib_base', nb); }
-  const df = (document.getElementById('cfg-discogs')||{}).value;
-  if(df !== undefined) store('discogs_token', (df||'').trim());
+  const pwEl = document.getElementById('cfg-pw');
+  if(pwEl && pwEl.value.trim()) setAppPw(pwEl.value.trim());
   st.textContent = 'Verifico…';
   try{
     await api(`${encodeURIComponent(TBL.libri)}?maxRecords=1`);
-    st.innerHTML = '✅ Connessione riuscita!';
+    st.innerHTML = '✅ Accesso riuscito!';
     if(goCatalog){ loaded=false; show('catalogo'); }
   }catch(e){
-    let extra = '';
-    const tok = (store('bib_token')||'');
-    if(String(e.message).includes('401')){
-      extra = ` <span style="color:var(--muted)">— token di ${tok.length} caratteri`
-        + (tok.length < 60 ? ': sembra <b>incompleto</b> (un token Airtable ne ha ~82, con un punto in mezzo). Ricopialo per intero.' : '. Verifica che sia corretto/non scaduto.')
-        + '</span>';
-    }
-    st.innerHTML = '❌ ' + e.message + extra;
+    st.innerHTML = '❌ ' + e.message;
   }
 }
 
@@ -2073,15 +2064,9 @@ async function ocrBlurb(canvas){
 
 /* upload di una scansione come allegato Airtable (campo "Scansioni") */
 async function uploadScan(recordId, canvas, filename, field){
-  const {token, base} = cfg();
   const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
-  const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent(field||'Scansioni')}/uploadAttachment`,{
-    method:'POST',
-    headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ contentType:'image/jpeg', file: base64, filename: (filename||'scan').replace(/\.(jpe?g|png|gif|webp|tiff?|bmp|heic|pdf)$/i,'')+'.jpg' })
-  });
-  if(!res.ok){ let m='Upload allegato fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
-  return res.json();
+  const fn = (filename||'scan').replace(/\.(jpe?g|png|gif|webp|tiff?|bmp|heic|pdf)$/i,'')+'.jpg';
+  return proxyUpload(recordId, field||'Scansioni', 'image/jpeg', base64, fn);
 }
 /* upload di un file grezzo (per i documenti: PDF o immagini non ricompresse) */
 async function uploadCoverDaUrl(recordId, field, url){
@@ -2095,15 +2080,8 @@ async function uploadCoverDaUrl(recordId, field, url){
   return uploadFile(recordId, field, file);
 }
 async function uploadFile(recordId, field, file){
-  const {token, base} = cfg();
   const base64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('file non leggibile')); r.readAsDataURL(file); });
-  const res = await fetch(`https://content.airtable.com/v0/${base}/${recordId}/${encodeURIComponent(field)}/uploadAttachment`,{
-    method:'POST',
-    headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ contentType: file.type||'application/octet-stream', file: base64, filename: file.name||'documento' })
-  });
-  if(!res.ok){ let m='Upload documento fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
-  return res.json();
+  return proxyUpload(recordId, field, file.type||'application/octet-stream', base64, file.name||'documento');
 }
 
 const scanLogEl = () => document.getElementById('scan-log');
@@ -2253,7 +2231,6 @@ function mbToFields(r, barcode){
   };
 }
 /* --- Discogs: copertura migliore per i supporti fisici (token nelle Impostazioni) --- */
-function getDiscogsToken(){ return (store('discogs_token')||'').trim(); }
 function stripArtistN(s){ return (s||'').replace(/\s*\(\d+\)$/,'').trim(); }
 function mapFormatoDiscogsStr(formatArr){
   const s = (formatArr||[]).join(' ').toLowerCase();
@@ -2337,16 +2314,15 @@ function discogsFullToFields(rel, stats, bc){
 }
 /* Da un risultato di ricerca, scarica il dettaglio e le statistiche di mercato. */
 async function discogsEnrich(hit, bc){
-  const token = getDiscogsToken();
   // Il cover_image è SEMPRE presente nei risultati di ricerca Discogs: usalo
   // come copertina di riserva se il dettaglio non porta immagini.
   const coverSearch = (hit && (hit.cover_image || hit.thumb)) || '';
   let data = null;
-  if(token && hit && hit.id){
+  if(hit && hit.id){
     try{
       const [rr, sr] = await Promise.all([
-        fetch('https://api.discogs.com/releases/' + hit.id + '?token=' + encodeURIComponent(token)),
-        fetch('https://api.discogs.com/marketplace/stats/' + hit.id + '?token=' + encodeURIComponent(token)).catch(()=>null)
+        dgFetch('releases/' + hit.id),
+        dgFetch('marketplace/stats/' + hit.id).catch(()=>null)
       ]);
       if(rr.ok){
         const rel = await rr.json();
@@ -2360,8 +2336,7 @@ async function discogsEnrich(hit, bc){
   return data;
 }
 async function discogsByBarcode(bc){
-  const token = getDiscogsToken(); if(!token) return null;
-  const r = await fetch('https://api.discogs.com/database/search?type=release&barcode='+encodeURIComponent(bc)+'&per_page=5&token='+encodeURIComponent(token));
+  const r = await dgFetch('database/search?type=release&barcode='+encodeURIComponent(bc)+'&per_page=5');
   if(!r.ok) return null;
   const j = await r.json();
   const hit = (j.results||[]).find(x=>x.title);
@@ -2382,8 +2357,7 @@ async function lookupByBarcode(bc){
 /* Ricerca per NUMERO DI CATALOGO dell'etichetta (es. "206 285-620"): utile per i
    vinili/cassette senza codice a barre. Discogs (search) + MusicBrainz. */
 async function discogsByCatno(cn){
-  const token = getDiscogsToken(); if(!token) return null;
-  const r = await fetch('https://api.discogs.com/database/search?type=release&catno='+encodeURIComponent(cn)+'&per_page=5&token='+encodeURIComponent(token));
+  const r = await dgFetch('database/search?type=release&catno='+encodeURIComponent(cn)+'&per_page=5');
   if(!r.ok) return null;
   const j = await r.json();
   const hit = (j.results||[]).find(x=>x.title);
@@ -2431,9 +2405,7 @@ async function cercaDaBarcode(){
     if(!res) res = await lookupByCatno(raw);
   }catch(e){ if(st) st.textContent = '⚠️ Ricerca non riuscita: '+esc(e.message||''); return; }
   if(!res){
-    if(st) st.innerHTML = '❌ Nessun riscontro per «'+esc(raw)+'»'
-      + (getDiscogsToken() ? '.' : ' — aggiungi il token Discogs nelle Impostazioni per una copertura molto migliore.')
-      + ' Puoi comunque inserire a mano.';
+    if(st) st.innerHTML = '❌ Nessun riscontro per «'+esc(raw)+'». Puoi comunque inserire a mano.';
     openObjForm('musica', null, pareBarcode ? {'Codice a barre': soloCifre} : {'Codice di catalogo': raw});
     return;
   }
