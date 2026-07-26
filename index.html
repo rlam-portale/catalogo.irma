@@ -343,7 +343,8 @@ const CAMPI = {
     {k:'Cornice', l:'Cornice'},
     {k:'Firma e iscrizioni', l:'Firma e iscrizioni', t:'area', full:1},
     {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS},
-    {k:'Note di conservazione', l:'Note di conservazione', t:'area', full:1}
+    {k:'Note di conservazione', l:'Note di conservazione', t:'area', full:1},
+    {k:'Fonti', l:'Fonti (ricerca AI)', t:'area', full:1}
   ],
   tappeti: [
     {k:'Origine', l:'Origine / manifattura'},
@@ -1146,7 +1147,7 @@ async function avviaAi(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
   const f = o.fields; const imageUrl = _imgUrlRecord(cat, f);
   const hints = (document.getElementById('ai-hints')||{}).value || '';
-  const skip = new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato']);
+  const skip = new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato','Fonti']);
   const campi = cat.campi.filter(c=>!skip.has(c.k)).map(c=>({k:c.k,l:c.l,t:c.t||'text',ch:c.ch}));
   const curr = { 'Titolo': f['Titolo']||'' };
   cat.campi.forEach(c=>{ const v=f[c.k]; if(v!==undefined && v!==null && v!=='') curr[c.k]=v; });
@@ -1180,6 +1181,12 @@ function renderAiPreview(){
     const label = k==='Titolo' ? 'Titolo' : campoMap[k].l;
     rows.push({k, label, cur, prop, checked:(cur===''||cur==null)});
   });
+  // Le fonti (top-level) confluiscono nel campo dedicato "Fonti", se esiste nella categoria.
+  const fontiArr = (_aiRes.fonti||[]).filter(Boolean);
+  if(campoMap['Fonti'] && fontiArr.length){
+    const cur = (f['Fonti']!==undefined && f['Fonti']!==null) ? f['Fonti'] : '';
+    rows.push({k:'Fonti', label:campoMap['Fonti'].l, cur, prop:fontiArr.join('\n'), checked:(cur===''||cur==null)});
+  }
   const au = _aiRes.autore || {};
   const aid=(f[AUTORE_LINK]||[])[0]; const aRec=aid&&autoreById(aid); const aCur=aRec?aRec.fields:{};
   const aRows=[];
