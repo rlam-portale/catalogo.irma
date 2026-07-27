@@ -1338,6 +1338,10 @@ function mdInlineRuns(s){
   push();
   return out.length ? out : [{t:'', b:false, i:false}];
 }
+/* Dicitura di proprietà nel piede delle schede stampate — modificabili qui */
+const COLLEZIONE = 'Collezione Dajlani';
+const PROPRIETARIO = 'Irma Dajlani';
+const LUOGO = 'Arezzo';
 async function stampaScheda(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
   const f = o.fields;
@@ -1519,14 +1523,21 @@ async function stampaScheda(catKey, id){
   doc.setFont('times','normal'); doc.setFontSize(7.5); doc.setCharSpace(1.2);
   doc.text('AREZZO', cx, cy+10.2, {align:'center'}); doc.setCharSpace(0);
 
-  // piede con numerazione, ripetuto su tutte le pagine
+  // piede: intestazione + numerazione + dicitura di proprietà, ripetuto su tutte le pagine
   const total = doc.getNumberOfPages();
+  const disclaimer = `Esemplare n. ${code||'—'} della raccolta ${COLLEZIONE} di ${PROPRIETARIO}, che ne dichiara la legittima proprietà. `
+    + `Scheda emessa in ${LUOGO}, il ${oggi}. La presente scheda è redatta a fini di inventario e di studio e non costituisce perizia né certificato di autenticità.`;
+  doc.setFont('times','italic'); doc.setFontSize(6.2);
+  const dl = doc.splitTextToSize(disclaimer, CW);
   for(let i=1;i<=total;i++){
     doc.setPage(i);
-    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.3); doc.line(M, 283, W-M, 283);
-    doc.setFont('times','normal'); doc.setFontSize(8.5); doc.setTextColor(muted[0],muted[1],muted[2]);
-    doc.text('Catalogo Dajlani Arezzo · scheda generata il '+oggi, M, 289);
-    doc.text('Pagina '+i+' di '+total, W-M, 289, {align:'right'});
+    const SEP = 281;
+    doc.setFont('times','normal'); doc.setFontSize(8); doc.setTextColor(muted[0],muted[1],muted[2]);
+    doc.text('Catalogo Dajlani Arezzo', M, SEP-1.6);
+    doc.text('Pagina '+i+' di '+total, W-M, SEP-1.6, {align:'right'});
+    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.3); doc.line(M, SEP, W-M, SEP);
+    doc.setFont('times','italic'); doc.setFontSize(6.2); doc.setTextColor(muted[0],muted[1],muted[2]);
+    dl.forEach((ln,k)=>doc.text(ln, M, SEP+3.4 + k*2.4));
   }
   const safe = (code+' '+titolo).replace(/[^\w\-À-ſ ]/g,'').trim().slice(0,60) || 'scheda';
   const url = URL.createObjectURL(doc.output('blob'));
