@@ -1646,11 +1646,14 @@ async function stampaCatalogo(catKey, fromN, toN, includiStima){
     doc.setFontSize(7.4);
     const fit=(s,maxW)=>{ s=String(s); if(doc.getTextWidth(s)<=maxW) return s; while(s.length>1 && doc.getTextWidth(s+'…')>maxW) s=s.slice(0,-1); return s+'…'; };
     const gap=6, colW=(tw-gap)/2, labW=Math.min(26, colW*0.44), valW=colW-labW-1;
-    const cellH=3.5, top0=rowTop+15, availH=(rowTop+rowH-2)-top0;
-    const rowsPerCol=Math.max(1, Math.floor(availH/cellH));
-    parts.slice(0, rowsPerCol*2).forEach((p,idx)=>{
+    const top0=rowTop+15, availH=(rowTop+rowH-2)-top0;
+    const maxRows=Math.max(1, Math.floor(availH/3.5));
+    const nShown=Math.min(parts.length, maxRows*2);
+    const rowsPerCol=Math.max(1, Math.ceil(nShown/2));   // bilancia le due colonne (metà campi ciascuna)
+    const cellH=Math.min(5, availH/rowsPerCol);           // e distribuisce le righe per usare l'altezza
+    parts.slice(0, nShown).forEach((p,idx)=>{
       const col=Math.floor(idx/rowsPerCol), rw=idx%rowsPerCol;
-      const cx=tx + col*(colW+gap), cy=top0 + rw*cellH;
+      const cx=tx + col*(colW+gap), cy=top0 + rw*cellH + 1;
       doc.setFont('times','bold'); doc.setTextColor(muted[0],muted[1],muted[2]);
       doc.text(fit(p[0], labW-1), cx, cy);
       doc.setFont('times','normal'); doc.setTextColor(ink[0],ink[1],ink[2]);
