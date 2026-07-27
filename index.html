@@ -1707,6 +1707,9 @@ function apriEtichette(){
       <div class="field" style="grid-column:1/-1"><label>Formato foglio etichette</label><select id="et-fmt">${fmts}</select></div>
       <div class="field"><label>Da codice n. (opzionale)</label><input id="et-from" type="number" min="1"></div>
       <div class="field"><label>A codice n. (opzionale)</label><input id="et-to" type="number" min="1"></div>
+      <div class="field" style="grid-column:1/-1"><label style="color:var(--muted)">Regolazione posizione — se dopo una prova su carta le etichette risultano spostate rispetto al foglio</label></div>
+      <div class="field"><label>Spostamento orizzontale → (mm)</label><input id="et-ox" type="number" step="0.5" value="0" placeholder="es. 1,5 verso destra"></div>
+      <div class="field"><label>Spostamento verticale ↓ (mm)</label><input id="et-oy" type="number" step="0.5" value="0"></div>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" onclick="closeModal()">Annulla</button>
@@ -1718,9 +1721,12 @@ function avviaEtichette(){
   const from=Number(document.getElementById('et-from').value)||0;
   const to=Number(document.getElementById('et-to').value)||0;
   const fmt=document.getElementById('et-fmt').value;
-  closeModal(); stampaEtichette(k, from, to, fmt);
+  const ox=Number(document.getElementById('et-ox').value)||0;
+  const oy=Number(document.getElementById('et-oy').value)||0;
+  closeModal(); stampaEtichette(k, from, to, fmt, ox, oy);
 }
-async function stampaEtichette(catKey, fromN, toN, fmtKey){
+async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY){
+  offX=offX||0; offY=offY||0;
   const cat=catByKey(catKey); const E=ETICHETTE[fmtKey]; if(!cat||!E) return;
   let items=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields));
   items=items.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN&&c<fromN)return false; if(toN&&c>toN)return false; return true; });
@@ -1734,7 +1740,7 @@ async function stampaEtichette(catKey, fromN, toN, fmtKey){
   items.forEach((o,n)=>{
     if(n>0 && n%perPage===0) doc.addPage();
     const p=n%perPage, c=p%E.cols, r=Math.floor(p/E.cols);
-    const x=E.mL + c*(E.lw+E.gX), y=E.mT + r*(E.lh+E.gY), w=E.lw, h=E.lh;
+    const x=E.mL + c*(E.lw+E.gX) + offX, y=E.mT + r*(E.lh+E.gY) + offY, w=E.lw, h=E.lh;
     const f=o.fields, code=codeStr(cat,f), pad=1.6;
     doc.setDrawColor(212,206,196); doc.setLineWidth(0.15); doc.roundedRect(x+0.3, y+0.3, w-0.6, h-0.6, 1, 1, 'S');
     // codice inventario in verticale sul lato destro (evidente)
