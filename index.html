@@ -325,8 +325,10 @@ const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fanta
 const STATI_CONS = ['Ottimo','Buono','Discreto','Da restaurare','Restaurato'];
 const STATI_CONS_MOBILI = ['Ottimo','Buono','Discreto','Con tarli','Da restaurare','Restaurato'];
 const GRADING = ['Mint','Near Mint','Excellent','Very Good','Good','Poor'];   // scala Goldmine (supporti musicali)
+const GRADI_NUM = ['FDC','qFDC','SPL','qSPL','BB','MB','B'];                  // scala italiana (numismatica)
 const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Con tarli':'#a56a2b','Da restaurare':'var(--red)','Restaurato':'var(--blue)',
-  'Mint':'var(--green)','Near Mint':'#5a9e6f','Excellent':'var(--blue)','Very Good':'var(--amber)','Good':'#a56a2b','Poor':'var(--red)'};
+  'Mint':'var(--green)','Near Mint':'#5a9e6f','Excellent':'var(--blue)','Very Good':'var(--amber)','Good':'#a56a2b','Poor':'var(--red)',
+  'FDC':'var(--green)','qFDC':'#5a9e6f','SPL':'#5a9e6f','qSPL':'var(--blue)','BB':'var(--amber)','MB':'#a56a2b','B':'var(--red)'};
 
 /* Descrittore campo per schede/form generici:
    {k:nome campo Airtable, l:etichetta, t:tipo, ch:[scelte], full:larghezza piena}
@@ -413,6 +415,63 @@ const CAMPI = {
     {k:'Stato del supporto', l:'Stato del supporto (disco/nastro)', t:'sel', ch:GRADING},
     {k:'Difetti e note', l:'Difetti e note di conservazione', t:'area', full:1},
     {k:'Ambiente', l:'Collocazione fisica'}
+  ],
+  numismatica: [
+    {k:'Data di catalogazione', l:'Data di catalogazione', t:'date'},
+    {k:'Stato nella collezione', l:'Stato nella collezione', t:'sel', ch:['In collezione','Duplicato','In permuta','Ceduto','Smarrito']},
+    {k:'Set o serie', l:'Set o serie'},
+    {k:'Denominazione', l:'Denominazione'},
+    {k:'Autorità emittente', l:'Autorità emittente'},
+    {k:'Sovrano o magistrato', l:'Sovrano o magistrato'},
+    {k:'Anno o millesimo', l:'Anno o millesimo'},
+    {k:'Datazione critica', l:'Datazione critica'},
+    {k:'Zecca', l:'Zecca'},
+    {k:'Incisore o officina', l:'Incisore / officina'},
+    {k:'Nominale e sistema monetario', l:'Nominale e sistema monetario'},
+    {k:'Metallo o lega', l:'Metallo o lega', t:'sel', ch:['Oro','Argento','Mistura','Biglione','Bronzo','Rame','Ottone','Nichel','Acmonital','Altro']},
+    {k:'Titolo metallico', l:'Titolo metallico (fineness)'},
+    {k:'Catalogo — sigla', l:'Catalogo di riferimento — sigla'},
+    {k:'Catalogo — numero', l:'Catalogo di riferimento — numero'},
+    {k:'Riferimenti secondari', l:'Riferimenti secondari', t:'area', full:1},
+    {k:'Numero esemplari noti', l:'Numero esemplari noti'},
+    {k:'Grado di rarità', l:'Grado di rarità'},
+    {k:'Diametro mm', l:'Diametro (mm)', t:'num'},
+    {k:'Peso g', l:'Peso (g)', t:'num'},
+    {k:'Spessore mm', l:'Spessore (mm)', t:'num'},
+    {k:'Asse di conio', l:'Asse di conio'},
+    {k:'Bordo o taglio', l:'Bordo / taglio'},
+    {k:'Forma', l:'Forma', t:'sel', ch:['Tonda','Scodellata','Scifata','Quadrata','Irregolare']},
+    {k:'Tecnica di conio', l:'Tecnica di conio', t:'sel', ch:['Coniata a martello','Coniata al torchio','Coniata al bilanciere','Fusa']},
+    {k:'Dritto — descrizione', l:'Dritto — descrizione', t:'area', full:1},
+    {k:'Dritto — leggenda', l:'Dritto — leggenda', t:'area', full:1},
+    {k:'Rovescio — descrizione', l:'Rovescio — descrizione', t:'area', full:1},
+    {k:'Rovescio — leggenda', l:'Rovescio — leggenda', t:'area', full:1},
+    {k:'Contromarche o punzoni', l:'Contromarche o punzoni', t:'area', full:1},
+    {k:'Graffiti e segni', l:'Graffiti e segni di zecchiere', t:'area', full:1},
+    {k:'Varianti note', l:'Varianti note', t:'area', full:1},
+    {k:'Stato di conservazione', l:'Grado di conservazione', t:'sel', ch:GRADI_NUM},
+    {k:'Conservazione dichiarata dal venditore', l:'Conservazione dichiarata dal venditore'},
+    {k:'Difetti', l:'Difetti', t:'area', full:1},
+    {k:'Patina', l:'Patina'},
+    {k:'Interventi', l:'Interventi', t:'area', full:1},
+    {k:'Sigillatura o perizia', l:'Sigillatura / perizia'},
+    {k:'Autenticità', l:'Autenticità', t:'sel', ch:['Autentica','Dubbia','Falso d\'epoca','Falso moderno','Riproduzione']},
+    {k:'Modalità di acquisizione', l:'Modalità di acquisizione', t:'sel', ch:['Acquisto','Permuta','Dono','Eredità','Ritrovamento']},
+    {k:'Venditore o cedente', l:'Venditore o cedente'},
+    {k:'Asta e lotto', l:'Asta e lotto'},
+    {k:'Valuta e cambio', l:'Valuta e cambio'},
+    {k:'Pedigree', l:'Pedigree (collezioni precedenti)', t:'area', full:1},
+    {k:'Documentazione di provenienza', l:'Documentazione di legittima provenienza'},
+    {k:'Valore di catalogo', l:'Valore di catalogo'},
+    {k:'Fonte della stima', l:'Fonte della stima'},
+    {k:'Valore assicurato', l:'Valore assicurato', t:'cur'},
+    {k:'Note di mercato', l:'Note di mercato', t:'area', full:1},
+    {k:'Ubicazione', l:'Ubicazione'},
+    {k:'Contenitore', l:'Contenitore'},
+    {k:'Posizione', l:'Posizione (fila/alveolo)'},
+    {k:'Tipo di alloggiamento', l:'Tipo di alloggiamento', t:'sel', ch:['Bustina Mylar','Capsula','Slab','Cartoncino','Oblò','Vassoio','Altro']},
+    {k:'Bibliografia specifica', l:'Bibliografia specifica', t:'area', full:1},
+    {k:'Note storiche', l:'Note storiche', t:'area', full:1}
   ]
 };
 /* coda comune a tutte le categorie d'arte (dopo i campi specifici) */
@@ -435,7 +494,8 @@ const CAT = [
   {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili},
   {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
   {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche},
-  {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true}
+  {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true},
+  {key:'numismatica', tbl:'Numismatica', label:'Numismatica', plur:'monete', sing:'moneta', prefix:'NUM', icon:'🪙', sub:'Autorità emittente', foto:'Foto', campi:CAMPI.numismatica}
 ];
 const catByKey = k => CAT.find(c=>c.key===k);
 const catByTbl = t => CAT.find(c=>c.tbl===t);
