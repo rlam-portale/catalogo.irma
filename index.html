@@ -1612,7 +1612,7 @@ async function stampaCatalogo(catKey, fromN, toN){
     doc.setFont('times','bold'); doc.setFontSize(12); doc.setTextColor(brown[0],brown[1],brown[2]); doc.setCharSpace(0.6);
     doc.text('CATALOGO DAJLANI AREZZO', M, 14); doc.setCharSpace(0);
     doc.setFont('times','italic'); doc.setFontSize(10); doc.setTextColor(muted[0],muted[1],muted[2]);
-    doc.text(cat.icon+' '+cat.label, W-M, 14, {align:'right'});
+    doc.text(cat.label, W-M, 14, {align:'right'});   // niente emoji: i font PDF standard non le disegnano
     doc.setDrawColor(brown[0],brown[1],brown[2]); doc.setLineWidth(0.4); doc.line(M,17.5,W-M,17.5);
   };
   header();
