@@ -210,6 +210,7 @@
       </select>
       <button id="sez-add" class="btn" onclick="aggiungiSezioneCorrente()">➕ Aggiungi</button>
       <button class="btn secondary small" onclick="apriStampaCatalogo()">🖨 Stampa</button>
+      <button class="btn secondary small" onclick="apriEtichette()">🏷 Etichette</button>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
     </div>
     <div class="toolbar" id="music-filters" style="display:none">
@@ -1680,6 +1681,92 @@ async function stampaCatalogo(catKey, fromN, toN, includiStima){
       <a class="btn" href="${url}" download="${escAttr(nome)}.pdf">⬇ Scarica PDF</a>
     </div>`, true);
   toast('📄 Catalogo generato');
+}
+
+/* ---- Stampa etichette adesive di contrassegno (fogli A4 pre-fustellati) ---- */
+const ETICHETTE = {
+  '8698': { nome:'52,5 × 29,7 mm — 40 per foglio (No. 8698)', lw:52.5, lh:29.7, cols:4, rows:10, mL:0,    mT:0,    gX:0,   gY:0 },
+  '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38.1, lh:21.2, cols:5, rows:13, mL:4.75, mT:10.7, gX:2.5, gY:0 }
+};
+function apriEtichette(){
+  const def=(catFiltro && catByKey(catFiltro))?catFiltro:CAT[0].key;
+  const opts=CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('');
+  const fmts=Object.keys(ETICHETTE).map(k=>`<option value="${k}">${esc(ETICHETTE[k].nome)}</option>`).join('');
+  modal(`
+    <h2>🏷 Stampa etichette di contrassegno</h2>
+    <p class="note">Un'etichetta per pezzo, con il <b>codice inventario in verticale</b> sul lato destro e i dati di catalogazione. Scegli categoria, formato del foglio ed eventuale intervallo di codici.</p>
+    <div class="frow">
+      <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="et-cat">${opts}</select></div>
+      <div class="field" style="grid-column:1/-1"><label>Formato foglio etichette</label><select id="et-fmt">${fmts}</select></div>
+      <div class="field"><label>Da codice n. (opzionale)</label><input id="et-from" type="number" min="1"></div>
+      <div class="field"><label>A codice n. (opzionale)</label><input id="et-to" type="number" min="1"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="avviaEtichette()">📄 Genera PDF</button>
+    </div>`);
+}
+function avviaEtichette(){
+  const k=document.getElementById('et-cat').value;
+  const from=Number(document.getElementById('et-from').value)||0;
+  const to=Number(document.getElementById('et-to').value)||0;
+  const fmt=document.getElementById('et-fmt').value;
+  closeModal(); stampaEtichette(k, from, to, fmt);
+}
+async function stampaEtichette(catKey, fromN, toN, fmtKey){
+  const cat=catByKey(catKey); const E=ETICHETTE[fmtKey]; if(!cat||!E) return;
+  let items=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields));
+  items=items.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN&&c<fromN)return false; if(toN&&c>toN)return false; return true; });
+  items.sort((a,b)=>(a.fields['Codice']||0)-(b.fields['Codice']||0));
+  if(!items.length){ toast('Nessun oggetto in questo intervallo'); return; }
+  try{ await loadScript(CDN.jspdf); }catch(e){ toast('Impossibile caricare il generatore PDF'); return; }
+  const JS=(window.jspdf||{}).jsPDF; if(!JS){ toast('Generatore PDF non disponibile'); return; }
+  const doc=new JS({unit:'mm',format:'a4'});
+  const perPage=E.cols*E.rows, big=E.lh>=26;
+  const fit=(s,maxW)=>{ s=String(s); if(doc.getTextWidth(s)<=maxW) return s; while(s.length>1 && doc.getTextWidth(s+'…')>maxW) s=s.slice(0,-1); return s+'…'; };
+  items.forEach((o,n)=>{
+    if(n>0 && n%perPage===0) doc.addPage();
+    const p=n%perPage, c=p%E.cols, r=Math.floor(p/E.cols);
+    const x=E.mL + c*(E.lw+E.gX), y=E.mT + r*(E.lh+E.gY), w=E.lw, h=E.lh;
+    const f=o.fields, code=codeStr(cat,f), pad=1.6;
+    doc.setDrawColor(212,206,196); doc.setLineWidth(0.15); doc.roundedRect(x+0.3, y+0.3, w-0.6, h-0.6, 1, 1, 'S');
+    // codice inventario in verticale sul lato destro (evidente)
+    const stripW=big?8:6;
+    doc.setFont('helvetica','bold'); doc.setTextColor(35,30,25);
+    let fs=big?14:10; doc.setFontSize(fs);
+    while(fs>5 && doc.getTextWidth(code) > h-2*pad){ fs-=0.5; doc.setFontSize(fs); }
+    doc.text(code, x+w-2, y+h-pad, {angle:90});
+    // area dati
+    const mx=x+pad, mw=w-stripW-pad;
+    let ty=y+pad+(big?2.4:2);
+    if(big){ doc.setFont('helvetica','bold'); doc.setFontSize(4.6); doc.setTextColor(111,74,39); doc.setCharSpace(0.3);
+      doc.text('COLLEZIONE DAJLANI', mx, ty); doc.setCharSpace(0); ty+=2.7; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(big?7.2:5.8); doc.setTextColor(20,20,20);
+    doc.text(fit(f['Titolo']||'—', mw), mx, ty); ty+=(big?3.1:2.6);
+    if(f[cat.sub]){ doc.setFont('helvetica','italic'); doc.setFontSize(big?5.8:5); doc.setTextColor(95,88,78);
+      doc.text(fit(String(f[cat.sub]), mw), mx, ty); ty+=(big?2.9:2.4); }
+    doc.setFont('helvetica','normal'); doc.setFontSize(big?5.4:4.6); doc.setTextColor(40,40,40);
+    for(const fld of cat.campi){
+      if(ty > y+h-pad) break;
+      if(fld.t==='area' || fld.k===cat.sub) continue;
+      const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
+      let disp=v;
+      if(fld.t==='date') disp=fmtDate(v); else if(fld.t==='cur') disp=fmtCur(v);
+      else if(fld.t==='num'&&/cm$/.test(fld.k)) disp=v+' cm'; else if(fld.t==='num'&&/kg$/.test(fld.k)) disp=v+' kg';
+      doc.text(fit(fld.l+': '+disp, mw), mx, ty); ty+=(big?2.5:2.2);
+    }
+  });
+  const url=URL.createObjectURL(doc.output('blob'));
+  const nome=('Etichette '+cat.label).replace(/[^\w\-À-ſ ]/g,'').trim().slice(0,50)||'etichette';
+  modal(`
+    <h2 style="margin-bottom:10px">Anteprima etichette — ${esc(cat.label)} · ${items.length} pezzi</h2>
+    <p class="note" style="margin-bottom:8px">Formato ${esc(E.nome)}. In stampa: <b>scala 100% / dimensioni reali</b> (niente "adatta alla pagina") e allinea con il tuo foglio.</p>
+    <iframe src="${url}" style="width:100%; height:64vh; border:1px solid var(--line); border-radius:8px; background:#fff"></iframe>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+      <a class="btn" href="${url}" download="${escAttr(nome)}.pdf">⬇ Scarica PDF</a>
+    </div>`, true);
+  toast('🏷 Etichette generate');
 }
 
 function openObjForm(catKey, id, prefill){
