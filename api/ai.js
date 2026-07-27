@@ -12,7 +12,8 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ error: { message: 'Config server mancante (ANTHROPIC_API_KEY).' } });
 
   const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-  const { catLabel, sing, titolo, hints, imageUrl, campi, currentFields, autore } = b;
+  const { catKey, catLabel, sing, titolo, hints, imageUrl, campi, currentFields, autore } = b;
+  const isCoin = catKey === 'numismatica';
 
   // 1) scarica l'immagine (se presente) e convertila in base64 per Claude
   let imgBlock = null;
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
   const correnti = JSON.stringify(currentFields || {}, null, 0);
   const autoreCorr = autore && Object.keys(autore).length ? JSON.stringify(autore, null, 0) : '(nessun autore collegato)';
 
-  const system = `Sei un catalogatore museale esperto di storia dell'arte, antiquariato e mercato dell'arte.
+  const systemArte = `Sei un catalogatore museale esperto di storia dell'arte, antiquariato e mercato dell'arte.
 Il tuo compito è schedare un bene (categoria: ${catLabel || 'opera'}) nel modo più completo, accurato e documentato possibile.
 Procedi così:
 1. Osserva con attenzione l'immagine fornita (soggetto, tecnica, stile, firma/iscrizioni, cornice, stato).
@@ -53,22 +54,38 @@ Regole di output IMPORTANTI:
 - Per i campi con valori ammessi, usa solo uno di quelli.
 - I campi numerici (dimensioni, anno) come numero o stringa numerica.`;
 
-  const userText = `INDICAZIONI PRELIMINARI dell'utente:
-${hints || '(nessuna)'}
+  const systemMonete = `Sei un numismatico esperto: identificazione, catalogazione e mercato di monete e medaglie.
+Il tuo compito è schedare una moneta o medaglia (categoria: ${catLabel || 'moneta'}) nel modo più completo, accurato e documentato possibile.
+Procedi così:
+1. Osserva con attenzione l'immagine (dritto e rovescio, se presenti): effigie/tipo, leggende, valore/nominale, metallo, segni di zecca, contorno, stile.
+2. Tieni conto delle INDICAZIONI PRELIMINARI dell'utente: sono spunti, non certezze — valutale criticamente.
+3. USA la ricerca web per identificare e confermare: consulta PRIORITARIAMENTE Numista (numista.com) e i cataloghi standard (KM/Krause, RIC, Crawford, MIR, CNI, Gigante, Montenegro, Sear). Ricava autorità emittente, sovrano, zecca, datazione, denominazione, metallo, riferimenti di catalogo (sigla e numero), grado di rarità e una stima di mercato realistica basata su realizzi comparabili.
+4. Compila i campi dello schema. Non inventare: se un dato non è determinabile, ometti il campo. Distingui i fatti dalle ipotesi e segnala il grado di certezza nei testi.
+5. Per i riferimenti di catalogo usa i campi SEPARATI "Catalogo — sigla" (es. KM, RIC, MIR) e "Catalogo — numero".
 
-TITOLO/denominazione provvisoria: ${titolo || '(non indicato)'}
+Regole di output IMPORTANTI:
+- Rispondi ESCLUSIVAMENTE con un unico oggetto JSON valido, senza testo prima o dopo, senza blocchi di codice.
+- Nelle chiavi di "opera" usa ESATTAMENTE i nomi di campo dello schema (tra virgolette). Ometti i campi che non sai compilare.
+- Per i campi con valori ammessi, usa solo uno di quelli.
+- I campi numerici (diametro, peso, spessore, anno) come numero o stringa numerica.
+- "autore" non si applica alle monete: restituisci un oggetto vuoto.`;
 
-VALORI GIÀ PRESENTI nella scheda (da confermare o completare, non cancellare senza motivo):
-${correnti}
+  const system = isCoin ? systemMonete : systemArte;
 
+  const bloccoAutore = isCoin ? '' : `
 AUTORE attualmente collegato:
 ${autoreCorr}
-
-CAMPI COMPILABILI (schema):
-${schema}
-
-Restituisci un JSON con questa forma:
-{
+`;
+  const formaJson = isCoin
+    ? `{
+  "opera": { "<nome campo>": "<valore>", ... },
+  "autore": {},
+  "confidenza": "alta|media|bassa",
+  "riepilogo": "2-3 frasi su cosa hai riconosciuto e con quale certezza",
+  "fonti": ["url", "url"]
+}
+Per le monete "autore" non si applica: lascialo come oggetto vuoto {}.`
+    : `{
   "opera": { "<nome campo>": "<valore>", ... },
   "autore": { "Nome": "...", "Nascita": "...", "Morte": "...", "Nazionalità": "...", "Biografia": "...(anche Markdown)...", "Note": "..." },
   "confidenza": "alta|media|bassa",
@@ -76,6 +93,19 @@ Restituisci un JSON con questa forma:
   "fonti": ["url", "url"]
 }
 Se non riesci a identificare l'autore, lascia "autore" con i soli campi che conosci o vuoto.`;
+  const userText = `INDICAZIONI PRELIMINARI dell'utente:
+${hints || '(nessuna)'}
+
+TITOLO/denominazione provvisoria: ${titolo || '(non indicato)'}
+
+VALORI GIÀ PRESENTI nella scheda (da confermare o completare, non cancellare senza motivo):
+${correnti}
+${bloccoAutore}
+CAMPI COMPILABILI (schema):
+${schema}
+
+Restituisci un JSON con questa forma:
+${formaJson}`;
 
   const payload = {
     model: process.env.AI_MODEL || 'claude-sonnet-5',

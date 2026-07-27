@@ -495,7 +495,7 @@ const CAT = [
   {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
   {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche},
   {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true},
-  {key:'numismatica', tbl:'Numismatica', label:'Numismatica', plur:'monete', sing:'moneta', prefix:'NUM', icon:'🪙', sub:'Autorità emittente', foto:'Foto', campi:CAMPI.numismatica}
+  {key:'numismatica', tbl:'Numismatica', label:'Numismatica', plur:'monete', sing:'moneta', prefix:'NUM', icon:'🪙', sub:'Autorità emittente', foto:'Foto', campi:CAMPI.numismatica, ai:true}
 ];
 const catByKey = k => CAT.find(c=>c.key===k);
 const catByTbl = t => CAT.find(c=>c.tbl===t);
@@ -1217,7 +1217,7 @@ async function avviaAi(catKey, id){
   if(out) out.innerHTML = '<p class="note">🌐 Osservo l\'immagine e cerco sul web…</p>';
   try{
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
-      body: JSON.stringify({ catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, campi, currentFields:curr, autore }) });
+      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, campi, currentFields:curr, autore }) });
     if(r.status===401){ chiediPassword(); return; }
     const txt = await r.text();
     let j = null; try{ j = JSON.parse(txt); }catch(e){}
