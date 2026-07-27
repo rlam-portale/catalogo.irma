@@ -1693,7 +1693,7 @@ async function stampaCatalogo(catKey, fromN, toN, includiStima){
 /* ---- Stampa etichette adesive di contrassegno (fogli A4 pre-fustellati) ---- */
 const ETICHETTE = {
   '8698': { nome:'52,5 × 29,7 mm — 40 per foglio (No. 8698)', lw:52.5, lh:29.7, cols:4, rows:10, mL:0,    mT:0,    gX:0,   gY:0 },
-  '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38.1, lh:21.2, cols:5, rows:13, mL:4.75, mT:10.7, gX:2.5, gY:0 }
+  '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38,   lh:21.2, cols:5, rows:13, mL:10,   mT:10.7, gX:0,   gY:0 }
 };
 function apriEtichette(){
   const def=(catFiltro && catByKey(catFiltro))?catFiltro:CAT[0].key;
