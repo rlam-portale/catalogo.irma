@@ -1525,8 +1525,14 @@ async function stampaScheda(catKey, id){
 
   // piede: intestazione + numerazione + dicitura di proprietà, ripetuto su tutte le pagine
   const total = doc.getNumberOfPages();
+  // data di emissione = Data di catalogazione del pezzo, se presente; altrimenti data reale
+  // di creazione del record; in mancanza, data odierna. Sempre una data vera.
+  const rawCat = f['Data di catalogazione'] || ((o.createdTime||'').slice(0,10));
+  const dataEmiss = /^\d{4}-\d{2}-\d{2}/.test(rawCat)
+    ? new Date(Number(rawCat.slice(0,4)), Number(rawCat.slice(5,7))-1, Number(rawCat.slice(8,10))).toLocaleDateString('it-IT',{day:'2-digit',month:'long',year:'numeric'})
+    : oggi;
   const disclaimer = `Esemplare n. ${code||'—'} della raccolta ${COLLEZIONE} di ${PROPRIETARIO}, che ne dichiara la legittima proprietà. `
-    + `Scheda emessa in ${LUOGO}, il ${oggi}. La presente scheda è redatta a fini di inventario e di studio e non costituisce perizia né certificato di autenticità.`;
+    + `Scheda emessa in ${LUOGO}, il ${dataEmiss}. La presente scheda è redatta a fini di inventario e di studio e non costituisce perizia né certificato di autenticità.`;
   doc.setFont('times','italic'); doc.setFontSize(6.2);
   const dl = doc.splitTextToSize(disclaimer, CW);
   for(let i=1;i<=total;i++){
