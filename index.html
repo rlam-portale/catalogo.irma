@@ -1569,6 +1569,7 @@ function apriStampaCatalogo(){
       <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="sc-cat">${opts}</select></div>
       <div class="field"><label>Da codice n. (opzionale)</label><input id="sc-from" type="number" min="1" placeholder="es. 1"></div>
       <div class="field"><label>A codice n. (opzionale)</label><input id="sc-to" type="number" min="1" placeholder="es. 20"></div>
+      <div class="field" style="grid-column:1/-1"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink)"><input type="checkbox" id="sc-stima" checked style="width:auto"> Includi il valore stimato</label></div>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" onclick="closeModal()">Annulla</button>
@@ -1579,10 +1580,11 @@ function avviaStampaCatalogo(){
   const k = document.getElementById('sc-cat').value;
   const from = Number(document.getElementById('sc-from').value)||0;
   const to = Number(document.getElementById('sc-to').value)||0;
+  const stima = !!(document.getElementById('sc-stima')||{}).checked;
   closeModal();
-  stampaCatalogo(k, from, to);
+  stampaCatalogo(k, from, to, stima);
 }
-async function stampaCatalogo(catKey, fromN, toN){
+async function stampaCatalogo(catKey, fromN, toN, includiStima){
   const cat = catByKey(catKey); if(!cat) return;
   let items = (objs[catKey]||[]).filter(o=>posseduto(catKey, o.fields));
   items = items.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN && c<fromN) return false; if(toN && c>toN) return false; return true; });
@@ -1633,16 +1635,27 @@ async function stampaCatalogo(catKey, fromN, toN){
     const parts=[];
     for(const fld of cat.campi){
       if(fld.t==='area') continue;
+      if(fld.k==='Valore stimato' && !includiStima) continue;   // opzione: escludi valore di stima
       const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
       let disp=v;
       if(fld.t==='date') disp=fmtDate(v); else if(fld.t==='cur') disp=fmtCur(v);
       else if(fld.t==='num' && /cm$/.test(fld.k)) disp=v+' cm'; else if(fld.t==='num' && /kg$/.test(fld.k)) disp=v+' kg';
-      parts.push(fld.l+': '+disp);
+      parts.push([fld.l, String(disp)]);
     }
-    doc.setFont('times','normal'); doc.setFontSize(7.6); doc.setTextColor(ink[0],ink[1],ink[2]);
-    const lines=doc.splitTextToSize(parts.join('   ·   '), tw);
-    const maxLines=Math.max(1, Math.floor((rowH-15)/3.1));
-    lines.slice(0,maxLines).forEach((ln,k)=>doc.text(ln, tx, rowTop+15.5+k*3.1));
+    // disposizione tabellare a 2 colonne: etichetta | valore allineati, valori troncati con ellissi
+    doc.setFontSize(7.4);
+    const fit=(s,maxW)=>{ s=String(s); if(doc.getTextWidth(s)<=maxW) return s; while(s.length>1 && doc.getTextWidth(s+'…')>maxW) s=s.slice(0,-1); return s+'…'; };
+    const gap=6, colW=(tw-gap)/2, labW=Math.min(26, colW*0.44), valW=colW-labW-1;
+    const cellH=3.5, top0=rowTop+15, availH=(rowTop+rowH-2)-top0;
+    const rowsPerCol=Math.max(1, Math.floor(availH/cellH));
+    parts.slice(0, rowsPerCol*2).forEach((p,idx)=>{
+      const col=Math.floor(idx/rowsPerCol), rw=idx%rowsPerCol;
+      const cx=tx + col*(colW+gap), cy=top0 + rw*cellH;
+      doc.setFont('times','bold'); doc.setTextColor(muted[0],muted[1],muted[2]);
+      doc.text(fit(p[0], labW-1), cx, cy);
+      doc.setFont('times','normal'); doc.setTextColor(ink[0],ink[1],ink[2]);
+      doc.text(fit(p[1], valW), cx+labW, cy);
+    });
     doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.2); doc.line(M, rowTop+rowH-1, W-M, rowTop+rowH-1);
   });
   const total=doc.getNumberOfPages();
