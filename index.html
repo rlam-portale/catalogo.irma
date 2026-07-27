@@ -209,6 +209,7 @@
         <option value="recenti">Ordina: aggiunti di recente</option>
       </select>
       <button id="sez-add" class="btn" onclick="aggiungiSezioneCorrente()">➕ Aggiungi</button>
+      <button class="btn secondary small" onclick="apriStampaCatalogo()">🖨 Stampa</button>
       <button class="btn secondary small" onclick="loadAll(true)">↻ Aggiorna</button>
     </div>
     <div class="toolbar" id="music-filters" style="display:none">
@@ -1555,6 +1556,114 @@ async function stampaScheda(catKey, id){
       <a class="btn" href="${url}" download="${escAttr(safe)}.pdf">⬇ Scarica PDF</a>
     </div>`, true);
   toast('📄 Anteprima pronta');
+}
+
+/* ---- Stampa catalogo compatto (elenco, 5 per pagina) ---- */
+function apriStampaCatalogo(){
+  const def = (catFiltro && catByKey(catFiltro)) ? catFiltro : CAT[0].key;
+  const opts = CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('');
+  modal(`
+    <h2>🖨 Stampa catalogo compatto</h2>
+    <p class="note">Elenco impaginato, <b>5 esemplari per pagina</b>, con miniatura e dati essenziali. Puoi limitare a un intervallo di codici (lascia vuoto per stampare tutta la categoria).</p>
+    <div class="frow">
+      <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="sc-cat">${opts}</select></div>
+      <div class="field"><label>Da codice n. (opzionale)</label><input id="sc-from" type="number" min="1" placeholder="es. 1"></div>
+      <div class="field"><label>A codice n. (opzionale)</label><input id="sc-to" type="number" min="1" placeholder="es. 20"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="avviaStampaCatalogo()">📄 Genera PDF</button>
+    </div>`);
+}
+function avviaStampaCatalogo(){
+  const k = document.getElementById('sc-cat').value;
+  const from = Number(document.getElementById('sc-from').value)||0;
+  const to = Number(document.getElementById('sc-to').value)||0;
+  closeModal();
+  stampaCatalogo(k, from, to);
+}
+async function stampaCatalogo(catKey, fromN, toN){
+  const cat = catByKey(catKey); if(!cat) return;
+  let items = (objs[catKey]||[]).filter(o=>posseduto(catKey, o.fields));
+  items = items.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN && c<fromN) return false; if(toN && c>toN) return false; return true; });
+  items.sort((a,b)=>(a.fields['Codice']||0)-(b.fields['Codice']||0));
+  if(!items.length){ toast('Nessun oggetto in questo intervallo'); return; }
+  toast('Preparo il catalogo… (' + items.length + ' esemplari)');
+  // precarico le miniature (host Airtable con CORS aperto)
+  const imgs = {};
+  for(const o of items){
+    const a = (o.fields[cat.foto]||[])[0];
+    const url = a ? ((a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url) : '';
+    if(!url) continue;
+    try{
+      const im = await new Promise((res,rej)=>{ const x=new Image(); x.crossOrigin='anonymous'; x.onload=()=>res(x); x.onerror=()=>rej(new Error('img')); x.src=url; });
+      const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight; c.getContext('2d').drawImage(im,0,0);
+      imgs[o.id] = { data:c.toDataURL('image/jpeg',0.82), w:im.naturalWidth, h:im.naturalHeight };
+    }catch(e){}
+  }
+  try{ await loadScript(CDN.jspdf); }catch(e){ toast('Impossibile caricare il generatore PDF'); return; }
+  const JS=(window.jspdf||{}).jsPDF; if(!JS){ toast('Generatore PDF non disponibile'); return; }
+  const doc=new JS({unit:'mm',format:'a4'});
+  const W=210, M=14, CW=W-2*M;
+  const brown=[111,74,39], muted=[138,127,112], ink=[36,31,24], line=[228,219,203];
+  const oggi=new Date().toLocaleDateString('it-IT',{day:'2-digit',month:'long',year:'numeric'});
+  const TOP=26, BOT=282, perPage=5, rowH=(BOT-TOP)/perPage;
+  const header=()=>{
+    doc.setFont('times','bold'); doc.setFontSize(12); doc.setTextColor(brown[0],brown[1],brown[2]); doc.setCharSpace(0.6);
+    doc.text('CATALOGO DAJLANI AREZZO', M, 14); doc.setCharSpace(0);
+    doc.setFont('times','italic'); doc.setFontSize(10); doc.setTextColor(muted[0],muted[1],muted[2]);
+    doc.text(cat.icon+' '+cat.label, W-M, 14, {align:'right'});
+    doc.setDrawColor(brown[0],brown[1],brown[2]); doc.setLineWidth(0.4); doc.line(M,17.5,W-M,17.5);
+  };
+  header();
+  items.forEach((o,n)=>{
+    if(n>0 && n%perPage===0){ doc.addPage(); header(); }
+    const rowTop = TOP + (n%perPage)*rowH;
+    const f=o.fields;
+    const boxW=34, boxH=rowH-8, im=imgs[o.id];
+    if(im){ let dw=boxW, dh=dw*im.h/im.w; if(dh>boxH){ dh=boxH; dw=dh*im.w/im.h; } doc.addImage(im.data,'JPEG', M+(boxW-dw)/2, rowTop+2+(boxH-dh)/2, dw, dh); }
+    else { doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.2); doc.rect(M, rowTop+2, boxW, boxH); }
+    const tx=M+boxW+6, tw=CW-boxW-6;
+    doc.setFont('times','bold'); doc.setFontSize(11); doc.setTextColor(brown[0],brown[1],brown[2]);
+    doc.text(codeStr(cat,f), tx, rowTop+6);
+    doc.setTextColor(ink[0],ink[1],ink[2]);
+    doc.text((doc.splitTextToSize(f['Titolo']||'—', tw-26)[0])||'—', tx+24, rowTop+6);
+    doc.setFont('times','italic'); doc.setFontSize(9.5); doc.setTextColor(muted[0],muted[1],muted[2]);
+    if(f[cat.sub]) doc.text(doc.splitTextToSize(String(f[cat.sub]), tw)[0], tx, rowTop+11);
+    const parts=[];
+    for(const fld of cat.campi){
+      if(fld.t==='area') continue;
+      const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
+      let disp=v;
+      if(fld.t==='date') disp=fmtDate(v); else if(fld.t==='cur') disp=fmtCur(v);
+      else if(fld.t==='num' && /cm$/.test(fld.k)) disp=v+' cm'; else if(fld.t==='num' && /kg$/.test(fld.k)) disp=v+' kg';
+      parts.push(fld.l+': '+disp);
+    }
+    doc.setFont('times','normal'); doc.setFontSize(7.6); doc.setTextColor(ink[0],ink[1],ink[2]);
+    const lines=doc.splitTextToSize(parts.join('   ·   '), tw);
+    const maxLines=Math.max(1, Math.floor((rowH-15)/3.1));
+    lines.slice(0,maxLines).forEach((ln,k)=>doc.text(ln, tx, rowTop+15.5+k*3.1));
+    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.2); doc.line(M, rowTop+rowH-1, W-M, rowTop+rowH-1);
+  });
+  const total=doc.getNumberOfPages();
+  for(let i=1;i<=total;i++){
+    doc.setPage(i);
+    doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.3); doc.line(M,286,W-M,286);
+    doc.setFont('times','italic'); doc.setFontSize(7.4); doc.setTextColor(muted[0],muted[1],muted[2]);
+    doc.text(`Raccolta ${COLLEZIONE} di ${PROPRIETARIO} — ${LUOGO} · stampa del ${oggi}`, M, 291);
+    doc.setFont('times','normal');
+    doc.text('Pagina '+i+' di '+total, W-M, 291, {align:'right'});
+  }
+  const nome=('Catalogo '+cat.label).replace(/[^\w\-À-ſ ]/g,'').trim().slice(0,50) || 'catalogo';
+  const url=URL.createObjectURL(doc.output('blob'));
+  modal(`
+    <h2 style="margin-bottom:10px">Anteprima catalogo — ${esc(cat.label)} · ${items.length} esemplari</h2>
+    <iframe src="${url}" style="width:100%; height:68vh; border:1px solid var(--line); border-radius:8px; background:#fff"></iframe>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+      <a class="btn" href="${url}" download="${escAttr(nome)}.pdf">⬇ Scarica PDF</a>
+    </div>`, true);
+  toast('📄 Catalogo generato');
 }
 
 function openObjForm(catKey, id, prefill){
