@@ -1692,8 +1692,8 @@ async function stampaCatalogo(catKey, fromN, toN, includiStima){
 
 /* ---- Stampa etichette adesive di contrassegno (fogli A4 pre-fustellati) ---- */
 const ETICHETTE = {
-  '8698': { nome:'52,5 × 29,7 mm — 40 per foglio (No. 8698)', lw:52.5, lh:29.7, cols:4, rows:10, mL:0,    mT:0,    gX:0,   gY:0 },
-  '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38,   lh:21.2, cols:5, rows:13, mL:10,   mT:10.7, gX:0,   gY:0 }
+  '8698': { nome:'52,5 × 29,7 mm — 40 per foglio (No. 8698)', lw:52.5, lh:29.7, cols:4, rows:10, mL:0,    mT:0,    gX:0,   gY:0, inset:3 },
+  '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38,   lh:21.2, cols:5, rows:13, mL:10,   mT:10.7, gX:0,   gY:0, inset:0 }
 };
 function apriEtichette(){
   const def=(catFiltro && catByKey(catFiltro))?catFiltro:CAT[0].key;
@@ -1741,16 +1741,16 @@ async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY){
     if(n>0 && n%perPage===0) doc.addPage();
     const p=n%perPage, c=p%E.cols, r=Math.floor(p/E.cols);
     const x=E.mL + c*(E.lw+E.gX) + offX, y=E.mT + r*(E.lh+E.gY) + offY, w=E.lw, h=E.lh;
-    const f=o.fields, code=codeStr(cat,f), pad=1.6;
+    const f=o.fields, code=codeStr(cat,f), pad=1.6, inset=E.inset||0;   // inset: rientro dai bordi laterali (stampanti che tagliano il full-bleed)
     doc.setDrawColor(212,206,196); doc.setLineWidth(0.15); doc.roundedRect(x+0.3, y+0.3, w-0.6, h-0.6, 1, 1, 'S');
-    // codice inventario in verticale sul lato destro (evidente)
+    // codice inventario in verticale sul lato destro (evidente), rientrato di `inset`
     const stripW=big?8:6;
     doc.setFont('helvetica','bold'); doc.setTextColor(35,30,25);
     let fs=big?14:10; doc.setFontSize(fs);
     while(fs>5 && doc.getTextWidth(code) > h-2*pad){ fs-=0.5; doc.setFontSize(fs); }
-    doc.text(code, x+w-2, y+h-pad, {angle:90});
-    // area dati
-    const mx=x+pad, mw=w-stripW-pad;
+    doc.text(code, x+w-2-inset, y+h-pad, {angle:90});
+    // area dati, anch'essa rientrata di `inset` a sinistra
+    const mx=x+pad+inset, mw=w-stripW-pad-2*inset;
     let ty=y+pad+(big?2.4:2);
     if(big){ doc.setFont('helvetica','bold'); doc.setFontSize(4.6); doc.setTextColor(111,74,39); doc.setCharSpace(0.3);
       doc.text('COLLEZIONE DAJLANI', mx, ty); doc.setCharSpace(0); ty+=2.7; }
