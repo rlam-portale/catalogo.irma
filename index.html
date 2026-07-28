@@ -1695,7 +1695,9 @@ const ETICHETTE = {
   '8698': { nome:'52,5 × 29,7 mm — 40 per foglio (No. 8698)', lw:52.5, lh:29.7, cols:4, rows:10, mL:0,    mT:0,    gX:0,   gY:0, inset:3 },
   '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38,   lh:21.2, cols:5, rows:13, mL:10,   mT:10.7, gX:0,   gY:0, inset:0 }
 };
+let _etUsed = new Set();   // posizioni già usate del foglio (modalità riuso)
 function apriEtichette(){
+  _etUsed = new Set();
   const def=(catFiltro && catByKey(catFiltro))?catFiltro:CAT[0].key;
   const opts=CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('');
   const fmts=Object.keys(ETICHETTE).map(k=>`<option value="${k}">${esc(ETICHETTE[k].nome)}</option>`).join('');
@@ -1704,18 +1706,42 @@ function apriEtichette(){
     <p class="note">Un'etichetta per pezzo, con il <b>codice inventario in verticale</b> sul lato destro e i dati di catalogazione. Scegli categoria, formato del foglio ed eventuale intervallo di codici.</p>
     <div class="frow">
       <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="et-cat">${opts}</select></div>
-      <div class="field" style="grid-column:1/-1"><label>Formato foglio etichette</label><select id="et-fmt">${fmts}</select></div>
+      <div class="field" style="grid-column:1/-1"><label>Formato foglio etichette</label><select id="et-fmt" onchange="_etUsed=new Set(); renderEtGrid()">${fmts}</select></div>
       <div class="field"><label>Da codice n. (opzionale)</label><input id="et-from" type="number" min="1"></div>
       <div class="field"><label>A codice n. (opzionale)</label><input id="et-to" type="number" min="1"></div>
       <div class="field" style="grid-column:1/-1"><label style="color:var(--muted)">Regolazione posizione — se dopo una prova su carta le etichette risultano spostate rispetto al foglio</label></div>
       <div class="field"><label>Spostamento orizzontale → (mm)</label><input id="et-ox" type="number" step="0.5" value="0" placeholder="es. 1,5 verso destra"></div>
       <div class="field"><label>Spostamento verticale ↓ (mm)</label><input id="et-oy" type="number" step="0.5" value="0"></div>
+      <div class="field" style="grid-column:1/-1"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink)"><input type="checkbox" id="et-riusa" onchange="toggleEtRiusa()" style="width:auto"> ♻️ Riusa un foglio già iniziato — salta le posizioni già usate</label></div>
+      <div class="field hidden" id="et-riusa-box" style="grid-column:1/-1">
+        <p class="note" style="margin-bottom:6px">Clicca sulle etichette <b>già staccate/usate</b> del foglio (diventano marroni): saranno saltate. Le libere si riempiono in ordine, dal codice più basso.</p>
+        <div id="et-grid"></div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" onclick="closeModal()">Annulla</button>
       <button class="btn" onclick="avviaEtichette()">📄 Genera PDF</button>
     </div>`);
 }
+function toggleEtRiusa(){
+  const on=document.getElementById('et-riusa').checked;
+  document.getElementById('et-riusa-box').classList.toggle('hidden', !on);
+  if(on) renderEtGrid();
+}
+function renderEtGrid(){
+  const box=document.getElementById('et-riusa-box'); if(!box || box.classList.contains('hidden')) return;
+  const E=ETICHETTE[document.getElementById('et-fmt').value]; const wrap=document.getElementById('et-grid'); if(!E||!wrap) return;
+  const cellW=Math.max(13, Math.min(30, Math.floor(160/E.cols)));
+  const cellH=Math.max(9, Math.round(cellW*E.lh/E.lw));
+  let html=`<div style="display:inline-grid; grid-template-columns:repeat(${E.cols}, ${cellW}px); gap:2px">`;
+  for(let i=0;i<E.cols*E.rows;i++){
+    const used=_etUsed.has(i);
+    html+=`<div onclick="toggleEtCell(${i})" title="posizione ${i+1}" style="height:${cellH}px; border:1px solid var(--line); border-radius:2px; cursor:pointer; background:${used?'var(--accent)':'#fff'}"></div>`;
+  }
+  html+=`</div><div class="note" style="margin-top:5px">${_etUsed.size} posizioni marcate come usate (saltate)</div>`;
+  wrap.innerHTML=html;
+}
+function toggleEtCell(i){ if(_etUsed.has(i)) _etUsed.delete(i); else _etUsed.add(i); renderEtGrid(); }
 function avviaEtichette(){
   const k=document.getElementById('et-cat').value;
   const from=Number(document.getElementById('et-from').value)||0;
@@ -1723,9 +1749,10 @@ function avviaEtichette(){
   const fmt=document.getElementById('et-fmt').value;
   const ox=Number(document.getElementById('et-ox').value)||0;
   const oy=Number(document.getElementById('et-oy').value)||0;
-  closeModal(); stampaEtichette(k, from, to, fmt, ox, oy);
+  const usate = (document.getElementById('et-riusa')||{}).checked ? Array.from(_etUsed) : [];
+  closeModal(); stampaEtichette(k, from, to, fmt, ox, oy, usate);
 }
-async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY){
+async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY, usate){
   offX=offX||0; offY=offY||0;
   const cat=catByKey(catKey); const E=ETICHETTE[fmtKey]; if(!cat||!E) return;
   let items=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields));
@@ -1737,9 +1764,20 @@ async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY){
   const doc=new JS({unit:'mm',format:'a4'}); installPdfSafe(doc);
   const perPage=E.cols*E.rows, big=E.lh>=26;
   const fit=(s,maxW)=>{ s=pdfSafe(String(s)); if(doc.getTextWidth(s)<=maxW) return s; while(s.length>1 && doc.getTextWidth(s+'…')>maxW) s=s.slice(0,-1); return s+'…'; };
-  items.forEach((o,n)=>{
-    if(n>0 && n%perPage===0) doc.addPage();
-    const p=n%perPage, c=p%E.cols, r=Math.floor(p/E.cols);
+  // le posizioni "usate" si saltano solo sulla PRIMA pagina (il foglio che stai riusando);
+  // le pagine successive sono fogli nuovi e si riempiono per intero.
+  const usedSet=new Set(usate||[]);
+  let slotPage=0, slotPos=0, curPage=0;
+  const nextFree=()=>{
+    while(slotPage===0 && usedSet.has(slotPos)){ slotPos++; if(slotPos>=perPage){ slotPage++; slotPos=0; } }
+    const s={page:slotPage, pos:slotPos};
+    slotPos++; if(slotPos>=perPage){ slotPage++; slotPos=0; }
+    return s;
+  };
+  items.forEach((o)=>{
+    const s=nextFree();
+    while(curPage<s.page){ doc.addPage(); curPage++; }
+    const p=s.pos, c=p%E.cols, r=Math.floor(p/E.cols);
     const x=E.mL + c*(E.lw+E.gX) + offX, y=E.mT + r*(E.lh+E.gY) + offY, w=E.lw, h=E.lh;
     const f=o.fields, code=codeStr(cat,f), pad=1.6, inset=E.inset||0;   // inset: rientro dai bordi laterali (stampanti che tagliano il full-bleed)
     doc.setDrawColor(212,206,196); doc.setLineWidth(0.15); doc.roundedRect(x+0.3, y+0.3, w-0.6, h-0.6, 1, 1, 'S');
