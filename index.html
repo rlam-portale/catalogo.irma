@@ -1978,10 +1978,36 @@ async function salvaModale(){
   toast('💾 Scheda salvata');
   if(wasNew && rid) openObjDetail(catKey, rid);   // apri la scheda per foto/documenti
 }
+/* estrae gli importi dalla "forbice" del valore di catalogo (es. "€ 150 – 300" → [150,300]).
+   Se nel testo ci sono numeri non-anno, scarta gli eventuali anni (1900-2099) così
+   un'edizione/anno del catalogo non falsa la stima; altrimenti tiene tutto. */
+function parseImporti(s){
+  s = String(s||'');
+  const norm = t => {
+    if(t.includes('.') && t.includes(',')) t = t.replace(/\./g,'').replace(',','.');
+    else if(t.includes(',')) t = t.replace(',','.');
+    else if(/\.\d{3}(?!\d)/.test(t)) t = t.replace(/\./g,'');
+    const n = parseFloat(t); return isNaN(n) ? null : n;
+  };
+  const all = []; let m; const re = /\d[\d.,]*/g;
+  while((m = re.exec(s))){
+    const raw = m[0], n = norm(raw);
+    if(n==null) continue;
+    all.push({ n, anno: Number.isInteger(n) && n>=1900 && n<=2099 && !/[.,]/.test(raw) });
+  }
+  const nonAnno = all.filter(x=>!x.anno).map(x=>x.n);
+  return nonAnno.length ? nonAnno : all.map(x=>x.n);
+}
+
 async function saveObj(catKey, id){
   const cat = catByKey(catKey);
   const fields = raccogliCampi(cat);
   if(!fields['Titolo']){ toast('Il titolo è obbligatorio'); return; }
+  // Numismatica: il Valore stimato deriva dal Valore di catalogo → massimo della forbice
+  if(catKey==='numismatica'){
+    const imp = parseImporti(fields['Valore di catalogo']);
+    if(imp.length) fields['Valore stimato'] = Math.max(...imp);
+  }
   // Blocca i doppioni dei supporti musicali (stesso barcode, o catalogo+etichetta, o titolo+artista)
   if(catKey==='musica' && !id){
     const dup = trovaDoppioneMusica(fields);
