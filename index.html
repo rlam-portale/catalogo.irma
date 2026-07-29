@@ -2190,6 +2190,7 @@ function mediaSection(cat, o){
     <div class="seclabel">Fotografie${hint}</div>
     <div class="gallery">${gallery}</div>
     <div style="margin:2px 0 4px"><button class="btn secondary small" onclick="apriRaddrizza('${cat.key}','${o.id}')">📐 Aggiungi foto e correggi la prospettiva</button></div>
+    ${cat.key==='numismatica' ? `<div style="margin:2px 0 4px"><button class="btn secondary small" onclick="apriRitaglioQuadrato('${cat.key}','${o.id}')">◻ Aggiungi foto con ritaglio quadrato (monete)</button></div>` : ''}
     <div class="seclabel">Documenti — perizie, certificati, fatture</div>
     <ul class="doclist">${docItems || '<li style="border:none; color:var(--muted)">Nessun documento allegato.</li>'}</ul>
     <button class="btn secondary small" onclick="aggiungiDoc('${cat.key}','${o.id}')">＋ Aggiungi documento (immagine o PDF)</button>`;
@@ -2372,6 +2373,70 @@ async function confermaRaddrizza(){
     await refreshDetail(catKey, id);
     toast('📐 Foto raddrizzata e caricata');
   }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent='📐 Raddrizza e carica'; } }
+}
+
+/* ---- Ritaglio quadrato (monete: si caricano spesso foto rotonde da centrare) ---- */
+let _crop = null;
+async function apriRitaglioQuadrato(catKey, id){
+  pickFiles('image/*', async files=>{
+    const file=files[0]; if(!file) return;
+    let work; try{ work=await fileToCanvas(file, 2200); }catch(e){ toast('Immagine non leggibile'); return; }
+    const maxW=Math.min(window.innerWidth-32, 900), maxH=window.innerHeight*0.66;
+    const scale=Math.min(maxW/work.width, maxH/work.height, 1);
+    const cw=Math.round(work.width*scale), ch=Math.round(work.height*scale);
+    const side=Math.round(Math.min(cw,ch)*0.82);
+    _crop={ work, scale, cw, ch, cx:cw/2, cy:ch/2, side, drag:null, start:null, catKey, id, name:file.name };
+    const ov=document.createElement('div'); ov.id='crop-ov';
+    ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
+    ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:600px">Centra la moneta nel <b>riquadro quadrato</b>: trascina per spostarlo, usa gli <b>angoli</b> per ridimensionarlo.</div>
+      <canvas id="crop-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:66vh; touch-action:none; background:#000; border-radius:6px; cursor:move"></canvas>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
+        <button class="btn secondary" onclick="chiudiRitaglio()">Annulla</button>
+        <button class="btn" id="crop-ok" onclick="confermaRitaglio()">◻ Ritaglia e carica</button>
+      </div>`;
+    document.body.appendChild(ov);
+    const cv=document.getElementById('crop-cv');
+    const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [ (t.clientX-r.left)*(cv.width/r.width), (t.clientY-r.top)*(cv.height/r.height) ]; };
+    const hit=(x,y)=>{ const {cx,cy,side}=_crop, h=side/2, hs=15;
+      const corners={nw:[cx-h,cy-h],ne:[cx+h,cy-h],sw:[cx-h,cy+h],se:[cx+h,cy+h]};
+      for(const k in corners){ const [px,py]=corners[k]; if((px-x)**2+(py-y)**2<hs*hs) return k; }
+      return (x>cx-h && x<cx+h && y>cy-h && y<cy+h) ? 'move' : null;
+    };
+    const down=e=>{ e.preventDefault(); const [x,y]=pos(e); const w=hit(x,y); if(w){ _crop.drag=w; _crop.start=[x,y,_crop.cx,_crop.cy,_crop.side]; } };
+    const move=e=>{ if(!_crop || !_crop.drag) return; e.preventDefault(); const [x,y]=pos(e);
+      if(_crop.drag==='move'){ _crop.cx=_crop.start[2]+(x-_crop.start[0]); _crop.cy=_crop.start[3]+(y-_crop.start[1]); }
+      else { const d=Math.max(Math.abs(x-_crop.cx), Math.abs(y-_crop.cy)); _crop.side=Math.max(30, d*2); }
+      clampCrop(); drawCrop();
+    };
+    const up=()=>{ if(_crop) _crop.drag=null; };
+    cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+    cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
+    drawCrop();
+  });
+}
+function clampCrop(){ const c=_crop; if(!c) return; c.side=Math.min(c.side, c.cw, c.ch); const h=c.side/2;
+  c.cx=Math.max(h, Math.min(c.cw-h, c.cx)); c.cy=Math.max(h, Math.min(c.ch-h, c.cy)); }
+function drawCrop(){ const c=_crop; if(!c) return; const cv=document.getElementById('crop-cv'); if(!cv) return;
+  const ctx=cv.getContext('2d'); const {work,cw,ch,cx,cy,side}=c, h=side/2;
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cw,ch); ctx.drawImage(work,0,0,cw,ch);
+  ctx.fillStyle='rgba(20,14,6,.55)'; ctx.beginPath(); ctx.rect(0,0,cw,ch); ctx.rect(cx-h,cy-h,side,side); ctx.fill('evenodd');
+  ctx.lineWidth=2; ctx.strokeStyle='#f7f4ef'; ctx.strokeRect(cx-h,cy-h,side,side);
+  [[cx-h,cy-h],[cx+h,cy-h],[cx-h,cy+h],[cx+h,cy+h]].forEach(([px,py])=>{
+    ctx.beginPath(); ctx.arc(px,py,5,0,7); ctx.fillStyle='#8b5e34'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#fff'; ctx.stroke(); });
+}
+function chiudiRitaglio(){ const ov=document.getElementById('crop-ov'); if(ov) ov.remove(); _crop=null; }
+async function confermaRitaglio(){
+  if(!_crop) return;
+  const {work,scale,cx,cy,side,catKey,id,name}=_crop;
+  const s=1/scale, wx=(cx-side/2)*s, wy=(cy-side/2)*s, wSide=side*s;
+  const outSize=Math.min(1600, Math.round(wSide));
+  const out=document.createElement('canvas'); out.width=outSize; out.height=outSize;
+  out.getContext('2d').drawImage(work, wx, wy, wSide, wSide, 0, 0, outSize, outSize);
+  const btn=document.getElementById('crop-ok'); if(btn){ btn.disabled=true; btn.textContent='Ritaglio…'; }
+  try{
+    await uploadScan(id, out, (name||'moneta').replace(/\.[^.]+$/,'')+'-ritaglio', catByKey(catKey).foto);
+    chiudiRitaglio(); await refreshDetail(catKey, id); toast('◻ Ritaglio quadrato caricato');
+  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent='◻ Ritaglia e carica'; } }
 }
 
 /* ================== ISBN LOOKUP + ARRICCHIMENTO WEB ================== */
