@@ -1973,7 +1973,11 @@ function openObjForm(catKey, id, prefill){
     return `<div class="field"${full}><label>${esc(fld.l)}</label>${inner}</div>`;
   };
   modal(`
-    <h2>${o?'Modifica':'Nuovo'} — ${esc(cat.label)}</h2>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px">
+      <h2 style="margin:0; flex:1; min-width:180px">${o?'Modifica':'Nuovo'} — ${esc(cat.label)}</h2>
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+      <button class="btn" onclick="salvaModale()">💾 Salva e chiudi</button>
+    </div>
     <div class="frow" onfocusout="autosalva()">
       <div class="field"><label>Codice di catalogo</label>
         <input id="of-code-disp" value="${o?esc(codeStr(cat,f)):''}" readonly placeholder="${o?'—':cat.prefix+'- (al salvataggio)'}"
