@@ -12,22 +12,29 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ error: { message: 'Config server mancante (ANTHROPIC_API_KEY).' } });
 
   const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-  const { catKey, catLabel, sing, titolo, hints, imageUrl, campi, currentFields, autore } = b;
+  const { catKey, catLabel, sing, titolo, hints, imageUrl, imageUrls, campi, currentFields, autore } = b;
   const isCoin = catKey === 'numismatica';
 
-  // 1) scarica l'immagine (se presente) e convertila in base64 per Claude
-  let imgBlock = null;
-  if (imageUrl) {
+  // 1) scarica TUTTE le foto (fino a 4: dritto, rovescio, dettagli) e convertile in base64 per Claude
+  const urls = (Array.isArray(imageUrls) && imageUrls.length ? imageUrls : (imageUrl ? [imageUrl] : [])).slice(0, 4);
+  const imgBlocks = [];
+  for (const u of urls) {
     try {
-      const ir = await fetch(imageUrl);
+      const ir = await fetch(u);
       if (ir.ok) {
         const ab = await ir.arrayBuffer();
         let mt = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
         if (!/^image\/(jpeg|png|gif|webp)$/.test(mt)) mt = 'image/jpeg';
-        imgBlock = { type: 'image', source: { type: 'base64', media_type: mt, data: Buffer.from(ab).toString('base64') } };
+        imgBlocks.push({ type: 'image', source: { type: 'base64', media_type: mt, data: Buffer.from(ab).toString('base64') } });
       }
-    } catch (e) { /* si prosegue senza immagine */ }
+    } catch (e) { /* si prosegue senza questa immagine */ }
   }
+  // intercala un'etichetta di testo prima di ogni foto, così l'AI sa quante sono e a cosa corrispondono
+  const imageParts = [];
+  imgBlocks.forEach((blk, i) => {
+    imageParts.push({ type: 'text', text: imgBlocks.length > 1 ? `Fotografia ${i + 1} di ${imgBlocks.length}:` : 'Fotografia:' });
+    imageParts.push(blk);
+  });
 
   // 2) schema dei campi che l'AI può compilare
   const schema = (campi || []).map(c => {
@@ -42,7 +49,7 @@ export default async function handler(req, res) {
   const systemArte = `Sei un catalogatore museale esperto di storia dell'arte, antiquariato e mercato dell'arte.
 Il tuo compito è schedare un bene (categoria: ${catLabel || 'opera'}) nel modo più completo, accurato e documentato possibile.
 Procedi così:
-1. Osserva con attenzione l'immagine fornita (soggetto, tecnica, stile, firma/iscrizioni, cornice, stato).
+1. Osserva con attenzione TUTTE le fotografie fornite (fronte, retro, dettagli): soggetto, tecnica, stile, firma/iscrizioni, cartigli/etichette sul retro, cornice, stato.
 2. Tieni conto delle INDICAZIONI PRELIMINARI dell'utente (ipotesi di attribuzione, provenienza, note): sono spunti, non certezze — valutale criticamente.
 3. USA la ricerca web per confermare o approfondire: autore, datazione, soggetto iconografico, opere analoghe, quotazioni di mercato, bibliografia.
 4. Compila i campi dello schema. Non inventare: se un dato non è determinabile, ometti il campo. Distingui i fatti dalle ipotesi e segnala il grado di certezza nei testi.
@@ -57,7 +64,7 @@ Regole di output IMPORTANTI:
   const systemMonete = `Sei un numismatico esperto: identificazione, catalogazione e mercato di monete e medaglie.
 Il tuo compito è schedare una moneta o medaglia (categoria: ${catLabel || 'moneta'}) nel modo più completo, accurato e documentato possibile.
 Procedi così:
-1. Osserva con attenzione l'immagine (dritto e rovescio, se presenti): effigie/tipo, leggende, valore/nominale, metallo, segni di zecca, contorno, stile.
+1. Ti vengono fornite TUTTE le fotografie disponibili (di norma la 1ª è il dritto e la 2ª il rovescio, più eventuali dettagli): ESAMINALE TUTTE, non solo la prima. Leggi da entrambe le facce: effigie/tipo, leggende del dritto E del rovescio, valore/nominale, metallo, segni di zecca, contorno, stile, data.
 2. Tieni conto delle INDICAZIONI PRELIMINARI dell'utente: sono spunti, non certezze — valutale criticamente.
 3. USA la ricerca web per identificare e confermare: consulta PRIORITARIAMENTE Numista (numista.com) e i cataloghi standard (KM/Krause, RIC, Crawford, MIR, CNI, Gigante, Montenegro, Sear). Ricava autorità emittente, sovrano, zecca, datazione, denominazione, metallo, riferimenti di catalogo (sigla e numero), grado di rarità e una stima di mercato realistica basata su realizzi comparabili.
 4. Compila i campi dello schema. Non inventare: se un dato non è determinabile, ometti il campo. Distingui i fatti dalle ipotesi e segnala il grado di certezza nei testi.
@@ -93,7 +100,10 @@ Per le monete "autore" non si applica: lascialo come oggetto vuoto {}.`
   "fonti": ["url", "url"]
 }
 Se non riesci a identificare l'autore, lascia "autore" con i soli campi che conosci o vuoto.`;
-  const userText = `INDICAZIONI PRELIMINARI dell'utente:
+  const notaFoto = imgBlocks.length > 1
+    ? `Sono allegate ${imgBlocks.length} fotografie dello stesso esemplare (esaminale TUTTE${isCoin ? '; di norma la 1ª è il dritto e la 2ª il rovescio' : ''}).\n\n`
+    : '';
+  const userText = `${notaFoto}INDICAZIONI PRELIMINARI dell'utente:
 ${hints || '(nessuna)'}
 
 TITOLO/denominazione provvisoria: ${titolo || '(non indicato)'}
@@ -112,7 +122,7 @@ ${formaJson}`;
     max_tokens: 4096,
     system,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
-    messages: [{ role: 'user', content: [{ type: 'text', text: userText }, ...(imgBlock ? [imgBlock] : [])] }]
+    messages: [{ role: 'user', content: [{ type: 'text', text: userText }, ...imageParts] }]
   };
 
   try {

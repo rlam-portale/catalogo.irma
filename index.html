@@ -1181,9 +1181,11 @@ function openObjDetail(catKey, id){
 /* ================== CATALOGAZIONE ASSISTITA DALL'AI ================== */
 let _aiRes = null;
 function _imgUrlRecord(cat, f){ const a=(f[cat.foto]||[])[0]; return a ? ((a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url) : ''; }
+/* tutte le foto della scheda (fino a 4) per l'analisi AI: dritto, rovescio, dettagli */
+function _imgUrlsRecord(cat, f){ return (f[cat.foto]||[]).slice(0,4).map(a=>(a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url).filter(Boolean); }
 function openAiCompila(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
-  const f = o.fields; const img = _imgUrlRecord(cat, f);
+  const f = o.fields; const img = _imgUrlRecord(cat, f); const nFoto = (f[cat.foto]||[]).length;
   const seed = [];
   if(f['Attribuzione']) seed.push('Attribuzione: '+f['Attribuzione']);
   if(f[cat.sub]) seed.push('Autore ipotizzato: '+f[cat.sub]);
@@ -1194,7 +1196,7 @@ function openAiCompila(catKey, id){
     <div class="detail" style="grid-template-columns:auto 1fr; gap:16px; align-items:start">
       <div class="cover" style="width:min(240px,40vw)">${img?`<img src="${esc(img)}">`:`<div class="noimg">nessuna foto</div>`}</div>
       <div class="meta">
-        <div class="note">L'AI osserva la foto, fa ricerche sul web e propone i campi della scheda e la biografia dell'autore. Poi scegli cosa applicare; resta tutto modificabile a mano.</div>
+        <div class="note">L'AI osserva ${nFoto>1?`tutte le <b>${nFoto} foto</b> (dritto, rovescio, dettagli — fino a 4)`:'la foto'}, fa ricerche sul web e propone i campi della scheda e la biografia dell'autore. Poi scegli cosa applicare; resta tutto modificabile a mano.</div>
         <div class="field" style="margin-top:10px"><label>Indicazioni preliminari (facoltative)</label>
           <textarea id="ai-hints" style="min-height:90px" placeholder="Es. «probabile scuola toscana '600», provenienza, firma illeggibile, ipotesi d'autore, note storiche…">${esc(seed.join('. '))}</textarea></div>
         ${img?'':'<p class="note" style="color:var(--amber)">⚠️ Nessuna fotografia sulla scheda: l\'analisi userà solo le indicazioni testuali. Aggiungi una foto per risultati migliori.</p>'}
@@ -1209,7 +1211,7 @@ function openAiCompila(catKey, id){
 }
 async function avviaAi(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
-  const f = o.fields; const imageUrl = _imgUrlRecord(cat, f);
+  const f = o.fields; const imageUrls = _imgUrlsRecord(cat, f); const imageUrl = imageUrls[0] || '';
   const hints = (document.getElementById('ai-hints')||{}).value || '';
   const skip = new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato','Fonti']);
   const campi = cat.campi.filter(c=>!skip.has(c.k)).map(c=>({k:c.k,l:c.l,t:c.t||'text',ch:c.ch}));
@@ -1223,7 +1225,7 @@ async function avviaAi(catKey, id){
   if(out) out.innerHTML = '<p class="note">🌐 Osservo l\'immagine e cerco sul web…</p>';
   try{
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
-      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, campi, currentFields:curr, autore }) });
+      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, imageUrls, campi, currentFields:curr, autore }) });
     if(r.status===401){ chiediPassword(); return; }
     const txt = await r.text();
     let j = null; try{ j = JSON.parse(txt); }catch(e){}
