@@ -210,6 +210,7 @@
         <option value="recenti">Ordina: aggiunti di recente</option>
       </select>
       <button id="sez-add" class="btn" onclick="aggiungiSezioneCorrente()">➕ Aggiungi</button>
+      <button class="btn secondary small" onclick="acquisizioneRapida(catFiltro)">📷 Rapida (solo foto)</button>
       <button class="btn secondary small" onclick="apriStampaCatalogo()">🖨 Stampa</button>
       <button class="btn secondary small" onclick="apriInventario()">📋 Inventario</button>
       <button class="btn secondary small" onclick="apriEtichette()">🏷 Etichette</button>
@@ -514,6 +515,7 @@ let _pendingCover = null;  // copertina analizzata da caricare dopo la creazione
 let _pendingCoverUrl = null; // URL copertina da Discogs, allegata dopo il salvataggio
 let _ofCat = null, _ofId = null, _ofWasNew = false;  // stato modale (per autosalvataggio)
 let _autosaveTimer = null, _autosaveBusy = false, _autosavePending = false, _savedTimer = null;
+let _acq = null;   // stato acquisizione rapida da cellulare (solo foto)
 let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
@@ -2218,6 +2220,84 @@ function pickFiles(accept, cb){
   const inp=document.createElement('input'); inp.type='file'; inp.accept=accept; inp.multiple=true;
   inp.onchange=()=>{ if(inp.files.length) cb([...inp.files]); };
   inp.click();
+}
+/* apre direttamente la fotocamera posteriore del telefono (uno scatto per volta) */
+function pickCamera(cb){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.setAttribute('capture','environment');
+  inp.onchange=()=>{ if(inp.files.length) cb([...inp.files]); };
+  inp.click();
+}
+
+/* ================== ACQUISIZIONE RAPIDA (cellulare, solo foto) ==================
+   Pensata per catalogare tante monete al volo dal telefono: crea una scheda
+   «Da catalogare» con codice automatico e vi carica solo le fotografie.
+   I dettagli e l'analisi AI si completano dopo, con calma, dal computer. */
+function acquisizioneRapida(catKey){
+  const cat = catByKey(catKey); if(!cat) return;
+  _acq = { catKey, id:null, code:'', count:0 };
+  modal(`
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px">
+      <h2 style="margin:0; flex:1; min-width:160px">📷 Acquisizione rapida — ${esc(cat.label)}</h2>
+      <button class="btn secondary" onclick="closeModal(); renderAll()">Chiudi</button>
+    </div>
+    <p class="note" style="margin-top:0">Scatta o carica solo le <b>fotografie</b>. La scheda viene creata con titolo «Da catalogare» e codice automatico; nome, dettagli, ritaglio e analisi AI li completi con calma dal computer.</p>
+    <div id="acq-stato" style="font-size:14px; margin:6px 0 12px; color:var(--muted)">Pronto per il primo pezzo.</div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px">
+      <button class="btn" style="flex:1; min-width:150px; font-size:17px; padding:16px" onclick="_acqScatta()">📷 Scatta foto</button>
+      <button class="btn secondary" style="flex:1; min-width:150px; font-size:17px; padding:16px" onclick="_acqGalleria()">🖼 Dalla galleria</button>
+    </div>
+    <div id="acq-foto" class="gallery"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="_acqNuovo()">➕ Nuovo pezzo</button>
+      <button class="btn" onclick="closeModal(); renderAll()">✓ Fine</button>
+    </div>`);
+}
+function _acqScatta(){ pickCamera(files=>_acqCarica(files)); }
+function _acqGalleria(){ pickFiles('image/*', files=>_acqCarica(files)); }
+function _acqNuovo(){
+  if(!_acq || !_acq.id){ toast('Scatta almeno una foto di questo pezzo'); return; }
+  _acq = { catKey:_acq.catKey, id:null, code:'', count:0 };
+  _acqRender(); toast('Pronto per un nuovo pezzo');
+}
+async function _acqCarica(files){
+  if(!_acq || !files || !files.length) return;
+  const cat = catByKey(_acq.catKey);
+  const stato = document.getElementById('acq-stato');
+  try{
+    if(!_acq.id){
+      if(stato) stato.textContent = 'Creo la scheda…';
+      const [rec] = await creaInTabella(cat.tbl, [{ 'Titolo':'Da catalogare' }]);
+      objs[_acq.catKey].push(rec);
+      _acq.id = rec.id; _acq.code = codeStr(cat, rec.fields); _acq.count = 0;
+    }
+    for(const file of files){
+      if(stato) stato.textContent = `Carico foto ${_acq.count+1}…`;
+      const c = await fileToCanvas(file, 1800);
+      await uploadScan(_acq.id, c, file.name || 'foto.jpg', cat.foto);
+      _acq.count++;
+    }
+    await ricaricaRecord(_acq.catKey, _acq.id);
+    _acqRender();
+    fillFilters(); renderTiles(); renderCatalog();
+    toast('📷 Foto aggiunta');
+  }catch(e){ toast(e.message); if(stato) stato.textContent = '⚠️ ' + (e.message||'errore di caricamento'); }
+}
+function _acqRender(){
+  if(!_acq) return;
+  const cat = catByKey(_acq.catKey);
+  const stato = document.getElementById('acq-stato');
+  if(stato){
+    stato.innerHTML = _acq.id
+      ? `Scheda <b>${esc(_acq.code)}</b> — ${_acq.count} foto caricate. Aggiungine altre di questo pezzo, oppure «Nuovo pezzo» per il successivo.`
+      : 'Pronto per il primo pezzo.';
+  }
+  const box = document.getElementById('acq-foto');
+  if(box){
+    const o = _acq.id ? objById(_acq.catKey, _acq.id) : null;
+    const fotos = (o && o.fields[cat.foto]) || [];
+    const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
+    box.innerHTML = fotos.map(a=>`<div class="ph"><img src="${esc(thumb(a))}"></div>`).join('');
+  }
 }
 async function aggiungiFoto(catKey, id){
   const cat = catByKey(catKey);
