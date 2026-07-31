@@ -28,6 +28,8 @@
   /* toolbar */
   .toolbar{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; align-items:center}
   .toolbar input[type=search]{flex:1; min-width:220px}
+  /* i menu dei filtri non devono allargarsi oltre misura per un valore lungo */
+  #music-filters select, #num-filters select{max-width:230px; flex:0 1 auto}
   input,select,textarea{font:inherit; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); outline:none}
   input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   input[readonly]{background:var(--bg); color:var(--muted); cursor:not-allowed}
