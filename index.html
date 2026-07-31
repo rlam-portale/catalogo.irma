@@ -222,6 +222,14 @@
       <select id="mf-autore" onchange="renderCatalog()"><option value="">Autore: tutti</option></select>
       <button class="btn secondary small" onclick="resetFiltriMusica()">↺ Azzera filtri</button>
     </div>
+    <div class="toolbar" id="num-filters" style="display:none">
+      <select id="nf-cons" onchange="renderCatalog()"><option value="">Conservazione: tutte</option></select>
+      <select id="nf-rar" onchange="renderCatalog()"><option value="">Rarità: tutte</option></select>
+      <select id="nf-shel" onchange="renderCatalog()"><option value="">Sheldon: tutti</option></select>
+      <select id="nf-metallo" onchange="renderCatalog()"><option value="">Metallo: tutti</option></select>
+      <select id="nf-autorita" onchange="renderCatalog()"><option value="">Autorità: tutte</option></select>
+      <button class="btn secondary small" onclick="resetFiltriNum()">↺ Azzera filtri</button>
+    </div>
     <div class="counts" id="count"></div>
     <div id="catalog" class="grid"></div>
     <div id="catalog-empty" class="empty hidden">Nessun oggetto trovato.</div>
@@ -872,14 +880,42 @@ function resetFiltriMusica(){
   ['mf-supporto','mf-genere','mf-autore'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
   renderCatalog();
 }
+/* filtri specifici della numismatica: conservazione, rarità, Sheldon, metallo, autorità.
+   Conservazione/rarità/Sheldon mantengono l'ordine della scala (non alfabetico). */
+function popolaFiltriNum(){
+  const recs = objs.numismatica || [];
+  const presenti = campo => { const s=new Set(); recs.forEach(r=>{ const v=(r.fields||{})[campo]; if(v!==undefined && v!==null && String(v).trim()) s.add(String(v).trim()); }); return s; };
+  const fillScala = (id, ordine, set, label) => {
+    const sel=document.getElementById(id); if(!sel) return; const cur=sel.value;
+    const opts = ordine.filter(o=>set.has(o));
+    [...set].forEach(v=>{ if(!ordine.includes(v)) opts.push(v); });   // eventuali valori fuori scala in coda
+    sel.innerHTML = `<option value="">${label}</option>` + opts.map(o=>`<option${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+  };
+  const fillAZ = (id, set, label) => {
+    const sel=document.getElementById(id); if(!sel) return; const cur=sel.value;
+    const opts=[...set].sort((a,b)=>a.localeCompare(b,'it'));
+    sel.innerHTML = `<option value="">${label}</option>` + opts.map(o=>`<option${o===cur?' selected':''}>${esc(o)}</option>`).join('');
+  };
+  fillScala('nf-cons', GRADI_NUM, presenti('Stato di conservazione'), 'Conservazione: tutte');
+  fillScala('nf-rar',  GRADI_RAR, presenti('Grado di rarità'),        'Rarità: tutte');
+  fillScala('nf-shel', SHELDON,   presenti('Grado Sheldon'),          'Sheldon: tutti');
+  fillAZ('nf-metallo',  presenti('Metallo o lega'),      'Metallo: tutti');
+  fillAZ('nf-autorita', presenti('Autorità emittente'),  'Autorità: tutte');
+}
+function resetFiltriNum(){
+  ['nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
+  renderCatalog();
+}
 function renderCatalog(){
   const toolbar = document.querySelector('#view-catalogo .toolbar');
   const cont = document.getElementById('catalog');
   const mfBox = document.getElementById('music-filters');
+  const nfBox = document.getElementById('num-filters');
   // MAIN PAGE: nessuna sezione selezionata → mostra le sezioni, niente anteprime.
   if(!catFiltro){
     if(toolbar) toolbar.style.display = 'none';
     if(mfBox) mfBox.style.display = 'none';
+    if(nfBox) nfBox.style.display = 'none';
     cont.className = 'sezioni';
     cont.innerHTML = CAT.map(c=>{
       const n = contaCat(c.key);
@@ -899,6 +935,8 @@ function renderCatalog(){
   if(_ba) _ba.textContent = '➕ Aggiungi ' + (_cc ? _cc.sing : '');
   if(catFiltro==='musica'){ if(mfBox){ mfBox.style.display=''; popolaFiltriMusica(); } }
   else if(mfBox) mfBox.style.display = 'none';
+  if(catFiltro==='numismatica'){ if(nfBox){ nfBox.style.display=''; popolaFiltriNum(); } }
+  else if(nfBox) nfBox.style.display = 'none';
   const q = (document.getElementById('q').value||'').toLowerCase().trim();
   const termini = q.split(/\s+/).filter(Boolean);
   const fc = document.getElementById('f-coll').value;
@@ -911,6 +949,15 @@ function renderCatalog(){
     if(fS) list = list.filter(x=> String(x.rec.fields['Tipologia supporto']||'')===fS);
     if(fG) list = list.filter(x=> String(x.rec.fields['Genere musicale']||'').split(/\s*,\s*/).map(t=>t.trim()).includes(fG));
     if(fA) list = list.filter(x=> String(x.rec.fields['Artista']||'')===fA);
+  }
+  if(catFiltro==='numismatica'){
+    const gv = id => (document.getElementById(id)||{}).value || '';
+    const fC=gv('nf-cons'), fR=gv('nf-rar'), fSh=gv('nf-shel'), fM=gv('nf-metallo'), fAu=gv('nf-autorita');
+    if(fC)  list = list.filter(x=> String(x.rec.fields['Stato di conservazione']||'')===fC);
+    if(fR)  list = list.filter(x=> String(x.rec.fields['Grado di rarità']||'')===fR);
+    if(fSh) list = list.filter(x=> String(x.rec.fields['Grado Sheldon']||'')===fSh);
+    if(fM)  list = list.filter(x=> String(x.rec.fields['Metallo o lega']||'')===fM);
+    if(fAu) list = list.filter(x=> String(x.rec.fields['Autorità emittente']||'')===fAu);
   }
   if(fc) list = list.filter(x=>(x.rec.fields['Collocazione']||[]).includes(fc));
   if(termini.length) list = list.filter(({cat,rec})=>{
