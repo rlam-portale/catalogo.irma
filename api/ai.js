@@ -69,6 +69,7 @@ Procedi così:
 3. USA la ricerca web per identificare e confermare: consulta PRIORITARIAMENTE Numista (numista.com) e i cataloghi standard (KM/Krause, RIC, Crawford, MIR, CNI, Gigante, Montenegro, Sear). Ricava autorità emittente, sovrano, zecca, datazione, denominazione, metallo, riferimenti di catalogo (sigla e numero), grado di rarità e una stima di mercato realistica basata su realizzi comparabili.
 4. Compila i campi dello schema. Non inventare: se un dato non è determinabile, ometti il campo. Distingui i fatti dalle ipotesi e segnala il grado di certezza nei testi.
 5. Per i riferimenti di catalogo usa i campi SEPARATI "Catalogo — sigla" (es. KM, RIC, MIR) e "Catalogo — numero".
+6. Conservazione: valuta il grado dalle foto e, se possibile, compila SIA "Stato di conservazione" (scala italiana: FDC, SPL, BB, MB, B) SIA "Grado Sheldon" (scala internazionale 1-70). Corrispondenza indicativa: FDC≈MS-63/70, SPL≈AU-50/58, BB≈VF-20/35, MB≈F-12/15, B≈VG-8/10. In assenza di foto nitide non forzare il giudizio.
 
 Regole di output IMPORTANTI:
 - Rispondi ESCLUSIVAMENTE con un unico oggetto JSON valido, senza testo prima o dopo, senza blocchi di codice.

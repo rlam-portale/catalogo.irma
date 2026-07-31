@@ -332,6 +332,7 @@ const STATI_CONS_MOBILI = ['Ottimo','Buono','Discreto','Con tarli','Da restaurar
 const GRADING = ['Mint','Near Mint','Excellent','Very Good','Good','Poor'];   // scala Goldmine (supporti musicali)
 const GRADI_NUM = ['FDC','qFDC','SPL','qSPL','BB','MB','B'];                  // scala italiana conservazione (numismatica)
 const GRADI_RAR = ['CC','C','NC','R','R1','R2','R3','R4','R5'];              // grado di rarità: da comunissima (CC) a rarissima (R5)
+const SHELDON = ['PO-1','FR-2','AG-3','G-4','G-6','VG-8','VG-10','F-12','F-15','VF-20','VF-25','VF-30','VF-35','XF-40','XF-45','AU-50','AU-53','AU-55','AU-58','MS-60','MS-61','MS-62','MS-63','MS-64','MS-65','MS-66','MS-67','MS-68','MS-69','MS-70']; // scala internazionale Sheldon 1-70 (ANA/NGC/PCGS)
 const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Con tarli':'#a56a2b','Da restaurare':'var(--red)','Restaurato':'var(--blue)',
   'Mint':'var(--green)','Near Mint':'#5a9e6f','Excellent':'var(--blue)','Very Good':'var(--amber)','Good':'#a56a2b','Poor':'var(--red)',
   'FDC':'var(--green)','qFDC':'#5a9e6f','SPL':'#5a9e6f','qSPL':'var(--blue)','BB':'var(--amber)','MB':'#a56a2b','B':'var(--red)'};
@@ -455,7 +456,8 @@ const CAMPI = {
     {k:'Contromarche o punzoni', l:'Contromarche o punzoni', t:'area', full:1},
     {k:'Graffiti e segni', l:'Graffiti e segni di zecchiere', t:'area', full:1},
     {k:'Varianti note', l:'Varianti note', t:'area', full:1},
-    {k:'Stato di conservazione', l:'Grado di conservazione', t:'sel', ch:GRADI_NUM},
+    {k:'Stato di conservazione', l:'Grado di conservazione (scala italiana)', t:'sel', ch:GRADI_NUM},
+    {k:'Grado Sheldon', l:'Grado Sheldon (scala internazionale 1–70)', t:'sel', ch:SHELDON},
     {k:'Conservazione dichiarata dal venditore', l:'Conservazione dichiarata dal venditore'},
     {k:'Difetti', l:'Difetti', t:'area', full:1},
     {k:'Patina', l:'Patina'},
