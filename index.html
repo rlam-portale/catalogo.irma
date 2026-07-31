@@ -330,7 +330,8 @@ const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fanta
 const STATI_CONS = ['Ottimo','Buono','Discreto','Da restaurare','Restaurato'];
 const STATI_CONS_MOBILI = ['Ottimo','Buono','Discreto','Con tarli','Da restaurare','Restaurato'];
 const GRADING = ['Mint','Near Mint','Excellent','Very Good','Good','Poor'];   // scala Goldmine (supporti musicali)
-const GRADI_NUM = ['FDC','qFDC','SPL','qSPL','BB','MB','B'];                  // scala italiana (numismatica)
+const GRADI_NUM = ['FDC','qFDC','SPL','qSPL','BB','MB','B'];                  // scala italiana conservazione (numismatica)
+const GRADI_RAR = ['CC','C','NC','R','R1','R2','R3','R4','R5'];              // grado di rarità: da comunissima (CC) a rarissima (R5)
 const CONS_COLORS = {'Ottimo':'var(--green)','Buono':'#5a9e6f','Discreto':'var(--amber)','Con tarli':'#a56a2b','Da restaurare':'var(--red)','Restaurato':'var(--blue)',
   'Mint':'var(--green)','Near Mint':'#5a9e6f','Excellent':'var(--blue)','Very Good':'var(--amber)','Good':'#a56a2b','Poor':'var(--red)',
   'FDC':'var(--green)','qFDC':'#5a9e6f','SPL':'#5a9e6f','qSPL':'var(--blue)','BB':'var(--amber)','MB':'#a56a2b','B':'var(--red)'};
@@ -439,7 +440,7 @@ const CAMPI = {
     {k:'Catalogo — numero', l:'Catalogo di riferimento — numero'},
     {k:'Riferimenti secondari', l:'Riferimenti secondari', t:'area', full:1},
     {k:'Numero esemplari noti', l:'Numero esemplari noti'},
-    {k:'Grado di rarità', l:'Grado di rarità'},
+    {k:'Grado di rarità', l:'Grado di rarità', t:'sel', ch:GRADI_RAR},
     {k:'Diametro mm', l:'Diametro (mm)', t:'num'},
     {k:'Peso g', l:'Peso (g)', t:'num'},
     {k:'Spessore mm', l:'Spessore (mm)', t:'num'},
@@ -1970,7 +1971,11 @@ function openObjForm(catKey, id, prefill){
     const idA = 'of-' + cssId(fld.k);
     let inner;
     if(fld.t==='area') inner = `<textarea id="${idA}">${esc(val||'')}</textarea>`;
-    else if(fld.t==='sel') inner = `<select id="${idA}"><option value=""></option>${fld.ch.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+    else if(fld.t==='sel'){
+      // preserva un eventuale valore già presente ma fuori dall'elenco (es. campi prima liberi)
+      const extra = (val && !fld.ch.includes(val)) ? `<option selected>${esc(val)}</option>` : '';
+      inner = `<select id="${idA}"><option value=""></option>${extra}${fld.ch.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+    }
     else if(fld.t==='num') inner = `<input id="${idA}" type="number" step="any" value="${val??''}">`;
     else if(fld.t==='date') inner = `<input id="${idA}" type="date" value="${val||''}">`;
     else if(fld.t==='cur') inner = `<input id="${idA}" type="number" step="0.01" value="${val??''}">`;
