@@ -202,6 +202,8 @@
   <!-- ============ CATALOGO ============ -->
   <section id="view-catalogo">
     <div class="tiles" id="tiles"></div>
+    <div class="cat-percorso" id="cat-percorso" style="display:none"></div>
+    <div class="cat-sintesi" id="cat-sintesi" style="display:none"></div>
     <div class="toolbar">
       <button class="btn secondary small" onclick="setCatFiltro('')">◂ Sezioni</button>
       <input type="search" id="q" placeholder="Cerca in tutti i campi: titolo, artista, interpreti, etichetta, tracce, crediti…" oninput="renderCatalog()">
@@ -234,6 +236,7 @@
       <select id="nf-autorita" onchange="renderCatalog()"><option value="">Autorità: tutte</option></select>
       <button class="btn secondary small" onclick="resetFiltriNum()">↺ Azzera filtri</button>
     </div>
+    <div class="cat-attivi" id="cat-attivi" style="display:none"></div>
     <div class="counts" id="count"></div>
     <div id="catalog" class="grid"></div>
     <div id="catalog-empty" class="empty hidden">Nessun oggetto trovato.</div>
@@ -910,6 +913,52 @@ function resetFiltriNum(){
   ['nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
   renderCatalog();
 }
+/* Testata di sezione: percorso (breadcrumb) + riga di sintesi con conteggi per stato e valore. */
+function renderTestata(cat){
+  const perc = document.getElementById('cat-percorso'), sint = document.getElementById('cat-sintesi');
+  if(!perc || !sint) return;
+  const sez = tuttiOggetti().filter(x=>x.cat.key===cat.key);
+  const n = sez.length;
+  const statoField = cat.key==='libri' ? 'Stato' : 'Stato di conservazione';
+  const counts = {};
+  sez.forEach(x=>{ const s=x.rec.fields[statoField]; if(s) counts[String(s)]=(counts[String(s)]||0)+1; });
+  let voci = Object.entries(counts);
+  if(cat.key==='numismatica') voci.sort((a,b)=> GRADI_NUM.indexOf(a[0]) - GRADI_NUM.indexOf(b[0]));
+  else voci.sort((a,b)=> b[1]-a[1]);
+  const parti = voci.slice(0,5).map(([s,c])=>`${c} ${esc(s)}`);
+  const senza = n - Object.values(counts).reduce((a,b)=>a+b,0);
+  if(senza>0) parti.push(`${senza} senza stato`);
+  const parz = sez.reduce((s,x)=> s + (Number(x.rec.fields['Valore stimato'])||0), 0);
+  const tot  = tuttiOggetti().reduce((s,x)=> s + (Number(x.rec.fields['Valore stimato'])||0), 0);
+  perc.style.display=''; sint.style.display='';
+  perc.innerHTML = `<span class="radice" onclick="setCatFiltro('')">Catalogo</span><span class="sep">›</span><h1>${esc(cat.label)}</h1>`;
+  sint.innerHTML = `<span><span class="conteggio">${n} ${esc(n===1?cat.sing:cat.plur)}</span>${parti.length?' · '+parti.join(' · '):''}</span>`
+    + `<span>valore <span class="valore">€ ${parz.toLocaleString('it-IT')}</span> <span class="totale">/ € ${tot.toLocaleString('it-IT')} totali</span></span>`;
+}
+/* Filtri attivi come pastiglie removibili. */
+function renderPastiglie(){
+  const box = document.getElementById('cat-attivi'); if(!box) return;
+  const g = id => (document.getElementById(id)||{}).value || '';
+  const chips = [];
+  if(g('q').trim()) chips.push(['q', '“'+g('q').trim()+'”']);
+  if(g('f-coll')) chips.push(['coll', collName(g('f-coll'))]);
+  if(catFiltro==='musica') ['mf-supporto','mf-genere','mf-autore'].forEach(id=>{ if(g(id)) chips.push([id, g(id)]); });
+  if(catFiltro==='numismatica') ['nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita'].forEach(id=>{ if(g(id)) chips.push([id, g(id)]); });
+  if(!chips.length){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='';
+  box.innerHTML = chips.map(([k,l])=>`<button class="cat-pastiglia" onclick="clearFiltro('${k}')">${esc(l)} <span class="x">×</span></button>`).join('')
+    + (chips.length>1 ? `<button class="cat-pastiglia azzera" onclick="clearTuttiFiltri()">Azzera tutto</button>` : '');
+}
+function clearFiltro(kind){
+  const set = (id,v='') => { const el=document.getElementById(id); if(el){ el.value=v; } };
+  if(kind==='q') set('q'); else if(kind==='coll') set('f-coll'); else set(kind);
+  renderCatalog();
+}
+function clearTuttiFiltri(){
+  ['q','f-coll','mf-supporto','mf-genere','mf-autore','nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita']
+    .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  renderCatalog();
+}
 function renderCatalog(){
   const toolbar = document.querySelector('#view-catalogo .toolbar');
   const cont = document.getElementById('catalog');
@@ -920,6 +969,8 @@ function renderCatalog(){
     if(toolbar) toolbar.style.display = 'none';
     if(mfBox) mfBox.style.display = 'none';
     if(nfBox) nfBox.style.display = 'none';
+    const tl=document.getElementById('tiles'); if(tl) tl.style.display='';
+    ['cat-percorso','cat-sintesi','cat-attivi'].forEach(id=>{ const e=document.getElementById(id); if(e){ e.style.display='none'; e.innerHTML=''; } });
     cont.className = 'sezioni';
     cont.innerHTML = CAT.map(c=>{
       const n = contaCat(c.key);
@@ -938,6 +989,8 @@ function renderCatalog(){
   cont.classList.toggle('fitta', catFiltro==='numismatica');   // monete: schede quadrate
   const _cc = catByKey(catFiltro), _ba = document.getElementById('sez-add');
   if(_ba) _ba.textContent = '➕ Aggiungi ' + (_cc ? _cc.sing : '');
+  const _tl=document.getElementById('tiles'); if(_tl) _tl.style.display='none';   // dentro una sezione: sintesi al posto delle tiles globali
+  if(_cc) renderTestata(_cc);
   if(catFiltro==='musica'){ if(mfBox){ mfBox.style.display=''; popolaFiltriMusica(); } }
   else if(mfBox) mfBox.style.display = 'none';
   if(catFiltro==='numismatica'){ if(nfBox){ nfBox.style.display=''; popolaFiltriNum(); } }
@@ -981,6 +1034,7 @@ function renderCatalog(){
   }
   else list.sort((a,b)=> String(a.rec.fields['Titolo']||'').localeCompare(String(b.rec.fields['Titolo']||''), 'it'));
   document.getElementById('count').textContent = `${list.length} ${list.length===1?'oggetto':'oggetti'}`;
+  renderPastiglie();
   document.getElementById('catalog').innerHTML = list.map(x=>{
     const snip = termini.length ? snippetMatch(x.cat, x.rec, termini) : [];
     return cardHTML(x.cat, x.rec, snip);
@@ -1219,7 +1273,7 @@ function openObjDetail(catKey, id){
         <h2>${esc(f['Titolo']||'')}</h2>
         <div class="auth">${esc(f[cat.sub]||'')}</div>
         <div style="margin:8px 0 2px">${consBadge}</div>
-        <dl class="kv">${kv.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
+        <div class="kv">${kv.map(([k,v])=>`<div class="kv-row"><span class="etichetta">${esc(k)}</span><span class="val">${esc(String(v))}</span></div>`).join('')}</div>
       </div>
     </div>
     ${blocks.length?`<div style="margin-top:10px">${blocks.map(([k,v])=>`<div class="seclabel">${esc(k)}</div><p class="note" style="white-space:pre-wrap; text-align:justify; margin-bottom:10px">${esc(String(v))}</p>`).join('')}</div>`:''}

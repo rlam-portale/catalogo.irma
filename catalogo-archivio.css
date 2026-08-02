@@ -151,6 +151,51 @@ th,td{ border-bottom:1px solid var(--filo-chiaro); }
 .seclabel{ color:var(--muted); }
 
 /* -------------------------------------------------------------------
+   9-bis. Testata di sezione: percorso + riga di sintesi
+   ------------------------------------------------------------------- */
+.cat-percorso{ display:flex; align-items:baseline; gap:8px; margin:2px 0; }
+.cat-percorso .radice{ color:var(--muted); cursor:pointer; }
+.cat-percorso .radice:hover{ color:var(--accent-dark); }
+.cat-percorso .sep{ color:var(--ink-fioco); }
+.cat-percorso h1{ margin:0; font-size:18px; font-weight:500; letter-spacing:-0.02em; }
+
+.cat-sintesi{ display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  padding:2px 0 12px; margin-bottom:14px; border-bottom:1px solid var(--filo-chiaro);
+  color:var(--ink-medio); font-size:13px; }
+.cat-sintesi .conteggio{ color:var(--ink); font-weight:500; }
+.cat-sintesi .valore{ color:var(--accent); font-weight:500; }
+.cat-sintesi .totale{ color:var(--ink-fioco); }
+
+/* pastiglie dei filtri attivi */
+.cat-attivi{ display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:12px; }
+.cat-pastiglia{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px 4px 11px; border:none;
+  border-radius:99px; background:var(--acc-velo); color:var(--accent-dark); font:inherit; font-size:13px; cursor:pointer; }
+.cat-pastiglia .x{ font-size:15px; line-height:1; }
+.cat-pastiglia:hover{ background:#d9e7e1; }
+.cat-pastiglia.azzera{ background:transparent; color:var(--muted); text-decoration:underline; }
+
+/* filtri come pulsanti-a-tendina */
+#num-filters select, #music-filters select{
+  appearance:none; -webkit-appearance:none;
+  border-radius:99px; padding:7px 30px 7px 13px; color:var(--ink-medio); font-weight:500; cursor:pointer;
+  background-color:var(--card);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8a80' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 11px center;
+}
+#num-filters select:hover, #music-filters select:hover{ border-color:var(--filo-marcato); }
+
+/* -------------------------------------------------------------------
+   9-ter. Dettaglio: due colonne + tabella dati bordata
+   ------------------------------------------------------------------- */
+.detail{ gap:24px; }
+.kv{ display:block; margin-top:14px; border-top:1px solid var(--filo-chiaro); }
+.kv-row{ display:flex; justify-content:space-between; gap:16px; padding:8px 0;
+  border-bottom:1px solid var(--filo-chiaro); font-size:13.5px; }
+.kv-row:last-child{ border-bottom:0; }
+.kv-row .etichetta{ color:var(--muted); }
+.kv-row .val{ font-weight:500; text-align:right; }
+
+/* -------------------------------------------------------------------
    10. Stampa (le stampe reali sono via jsPDF; qui solo il fallback browser)
    ------------------------------------------------------------------- */
 @media print{
