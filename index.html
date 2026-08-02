@@ -1934,7 +1934,7 @@ function apriEtichette(){
       <div class="field"><label>Spostamento verticale ↓ (mm)</label><input id="et-oy" type="number" step="0.5" value="0"></div>
       <div class="field" style="grid-column:1/-1"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink)"><input type="checkbox" id="et-riusa" onchange="toggleEtRiusa()" style="width:auto"> ♻️ Riusa un foglio già iniziato — salta le posizioni già usate</label></div>
       <div class="field hidden" id="et-riusa-box" style="grid-column:1/-1">
-        <p class="note" style="margin-bottom:6px">Clicca sulle etichette <b>già staccate/usate</b> del foglio (diventano marroni): saranno saltate. Le libere si riempiono in ordine, dal codice più basso.</p>
+        <p class="note" style="margin-bottom:6px">Clicca — o <b>trascina per selezionare un rettangolo</b> — sulle etichette <b>già staccate/usate</b> del foglio (diventano verdi): saranno saltate. Le libere si riempiono in ordine, dal codice più basso.</p>
         <div id="et-grid"></div>
       </div>
     </div>
@@ -1948,20 +1948,60 @@ function toggleEtRiusa(){
   document.getElementById('et-riusa-box').classList.toggle('hidden', !on);
   if(on) renderEtGrid();
 }
+let _etGridCtx = null, _etDrag = null;
 function renderEtGrid(){
   const box=document.getElementById('et-riusa-box'); if(!box || box.classList.contains('hidden')) return;
   const E=ETICHETTE[document.getElementById('et-fmt').value]; const wrap=document.getElementById('et-grid'); if(!E||!wrap) return;
   const cellW=Math.max(13, Math.min(30, Math.floor(160/E.cols)));
   const cellH=Math.max(9, Math.round(cellW*E.lh/E.lw));
-  let html=`<div style="display:inline-grid; grid-template-columns:repeat(${E.cols}, ${cellW}px); gap:2px">`;
+  let cells='';
   for(let i=0;i<E.cols*E.rows;i++){
-    const used=_etUsed.has(i);
-    html+=`<div onclick="toggleEtCell(${i})" title="posizione ${i+1}" style="height:${cellH}px; border:1px solid var(--line); border-radius:2px; cursor:pointer; background:${used?'var(--accent)':'#fff'}"></div>`;
+    cells+=`<div class="et-cell${_etUsed.has(i)?' used':''}" data-idx="${i}" title="posizione ${i+1}" style="height:${cellH}px"></div>`;
   }
-  html+=`</div><div class="note" style="margin-top:5px">${_etUsed.size} posizioni marcate come usate (saltate)</div>`;
-  wrap.innerHTML=html;
+  wrap.innerHTML=`<div class="et-grid-inner" style="display:inline-grid; grid-template-columns:repeat(${E.cols}, ${cellW}px); gap:2px">${cells}</div>`
+    + `<div class="note" style="margin-top:5px">${_etUsed.size} posizioni marcate come usate (saltate)</div>`;
+  _etGridCtx = { cols:E.cols, rows:E.rows };
+  attachEtDrag(wrap.querySelector('.et-grid-inner'));
 }
-function toggleEtCell(i){ if(_etUsed.has(i)) _etUsed.delete(i); else _etUsed.add(i); renderEtGrid(); }
+/* Selezione rettangolare a trascinamento (mouse e touch) sulla griglia del foglio. */
+function attachEtDrag(inner){
+  if(!inner) return;
+  const cols = _etGridCtx.cols;
+  const idxAt = el => (el && el.classList && el.classList.contains('et-cell')) ? +el.dataset.idx : null;
+  const rettangolo = (a,b) => {
+    const ra=Math.floor(a/cols), ca=a%cols, rb=Math.floor(b/cols), cb=b%cols;
+    const r0=Math.min(ra,rb), r1=Math.max(ra,rb), c0=Math.min(ca,cb), c1=Math.max(ca,cb);
+    const out=[]; for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++) out.push(r*cols+c);
+    return out;
+  };
+  const anteprima = sel => {
+    inner.querySelectorAll('.et-cell').forEach(el=>{
+      const i=+el.dataset.idx, dentro=sel.includes(i);
+      el.classList.toggle('preview', dentro);
+      el.classList.toggle('used', dentro ? _etDrag.paint : _etUsed.has(i));
+    });
+  };
+  inner.addEventListener('pointerdown', e=>{
+    const i=idxAt(e.target); if(i==null) return;
+    e.preventDefault();
+    _etDrag={ anchor:i, paint:!_etUsed.has(i), sel:[i] };
+    try{ inner.setPointerCapture(e.pointerId); }catch(_){}
+    anteprima([i]);
+  });
+  inner.addEventListener('pointermove', e=>{
+    if(!_etDrag) return;
+    const i=idxAt(document.elementFromPoint(e.clientX, e.clientY)); if(i==null) return;
+    _etDrag.sel=rettangolo(_etDrag.anchor, i);
+    anteprima(_etDrag.sel);
+  });
+  const fine = ()=>{
+    if(!_etDrag) return;
+    _etDrag.sel.forEach(i=> _etDrag.paint ? _etUsed.add(i) : _etUsed.delete(i));
+    _etDrag=null; renderEtGrid();
+  };
+  inner.addEventListener('pointerup', fine);
+  inner.addEventListener('pointercancel', fine);
+}
 function avviaEtichette(){
   const k=document.getElementById('et-cat').value;
   const from=Number(document.getElementById('et-from').value)||0;

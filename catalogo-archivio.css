@@ -274,3 +274,9 @@ th,td{ border-bottom:1px solid var(--filo-chiaro); }
   .home-avvia{ grid-template-columns:1fr; }
 }
 @media (prefers-reduced-motion: reduce){ .sez-card{ transition:none; } }
+
+/* ===== Griglia riuso foglio etichette: selezione a trascinamento ===== */
+.et-grid-inner{ touch-action:none; user-select:none; }
+.et-cell{ border:1px solid var(--line); border-radius:2px; cursor:pointer; background:var(--sup-carta,#fff); }
+.et-cell.used{ background:var(--accent); border-color:var(--accent); }
+.et-cell.preview{ box-shadow:0 0 0 1px var(--accent) inset; }
