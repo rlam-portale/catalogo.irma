@@ -156,6 +156,8 @@
 
   @media (max-width:600px){ .grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px} }
 </style>
+<!-- Skin "Archivio": ridefinisce token e componenti sopra lo stile di base. -->
+<link rel="stylesheet" href="catalogo-archivio.css">
 </head>
 <body>
 
@@ -933,6 +935,7 @@ function renderCatalog(){
   }
   if(toolbar) toolbar.style.display = '';
   cont.className = 'grid';
+  cont.classList.toggle('fitta', catFiltro==='numismatica');   // monete: schede quadrate
   const _cc = catByKey(catFiltro), _ba = document.getElementById('sez-add');
   if(_ba) _ba.textContent = '➕ Aggiungi ' + (_cc ? _cc.sing : '');
   if(catFiltro==='musica'){ if(mfBox){ mfBox.style.display=''; popolaFiltriMusica(); } }

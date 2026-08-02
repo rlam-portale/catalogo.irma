@@ -1,0 +1,160 @@
+/* ===================================================================
+   Catalogo Dajlani — direzione "Archivio"
+   Skin applicata SOPRA la struttura esistente dell'app (index.html):
+   ridefinisce i token di colore/forma/tipografia e rifinisce i
+   componenti reali (topbar, toolbar, chip, tiles, griglia/schede,
+   modale, dettaglio, tabelle, form). Caricato dopo lo <style> inline,
+   quindi vince nella cascata senza dover riscrivere le funzioni JS.
+   =================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+/* -------------------------------------------------------------------
+   1. Token (ridefiniscono quelli inline: stessa specificità, dopo → vincono)
+   ------------------------------------------------------------------- */
+:root{
+  /* superfici */
+  --bg:#fafaf8;            /* pagina, campi a riposo */
+  --card:#ffffff;          /* schede, barra superiore */
+  --sup-quieta:#f0efe9;    /* placeholder immagine, zebra */
+
+  /* inchiostro */
+  --ink:#17171a;
+  --ink-medio:#4a4a44;
+  --muted:#8a8a80;
+  --ink-fioco:#a6a69c;
+
+  /* filetti */
+  --line:#e4e4de;
+  --filo-chiaro:#f1f1eb;
+  --filo-marcato:#dedad6;
+
+  /* accento unico — verde bosco */
+  --accent:#0f6e56;
+  --accent-dark:#0b4e3d;
+  --acc-velo:#e7f1ed;
+
+  /* stato di conservazione (pastiglie e pallini, mai fondi ampi) */
+  --green:#1d9e75;
+  --red:#e24b4a;
+  --amber:#ba7517;
+  --blue:#3a6ea5;
+
+  /* forma */
+  --radius:8px;
+  --shadow:0 1px 2px rgba(20,20,20,.05);
+
+  /* tipografia */
+  --f-ui:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",monospace;
+}
+
+/* -------------------------------------------------------------------
+   2. Base
+   ------------------------------------------------------------------- */
+body{ font-family:var(--f-ui); font-size:14px; -webkit-font-smoothing:antialiased; }
+h1,h2,h3,.serif{ font-family:var(--f-ui); font-weight:500; letter-spacing:-0.02em; }
+a{ color:var(--accent-dark); }
+
+input,select,textarea{ border-radius:7px; background:var(--bg); border-color:var(--line); padding:8px 10px; }
+input:focus,select:focus,textarea:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--acc-velo); }
+input[readonly],input[readonly]:focus{ box-shadow:none; }
+
+/* codici e numeri sempre monospaziati */
+.code,.tile .num{ font-family:var(--f-mono); }
+
+/* -------------------------------------------------------------------
+   3. Barra superiore
+   ------------------------------------------------------------------- */
+header{ border-bottom:1px solid var(--filo-chiaro); }
+.logo{ font-family:var(--f-ui); font-size:16px; font-weight:600; color:var(--ink); letter-spacing:-0.02em; }
+.logo span{ color:var(--ink); font-weight:500; }
+
+nav button{ border-radius:6px; font-weight:500; color:var(--muted); padding:8px 12px; }
+nav button:hover:not(.active){ background:var(--sup-quieta); }
+nav button.active{ background:transparent; color:var(--ink); border-radius:0; border-bottom:2px solid var(--accent); padding-bottom:6px; }
+
+/* barra "nuova versione" */
+#updatebar{ background:var(--accent); }
+#updatebar button{ color:var(--accent-dark); }
+
+/* -------------------------------------------------------------------
+   4. Controlli (bottoni, toolbar, filtri)
+   ------------------------------------------------------------------- */
+.btn{ border-radius:7px; font-weight:500; padding:9px 14px; background:var(--accent); }
+.btn:hover{ background:var(--accent-dark); }
+.btn.secondary{ background:var(--bg); border:1px solid var(--line); color:var(--ink-medio); }
+.btn.secondary:hover{ background:var(--card); border-color:var(--filo-marcato); }
+.btn.small{ padding:6px 11px; font-size:13px; }
+.btn.danger{ background:var(--red); }
+
+#num-filters select, #music-filters select{ background:var(--card); border-radius:7px; }
+
+/* -------------------------------------------------------------------
+   5. Chip di categoria / pastiglie
+   ------------------------------------------------------------------- */
+.chip{ border-radius:99px; border:1px solid var(--line); background:var(--card); color:var(--ink-medio); font-weight:500; }
+.chip:hover{ background:var(--sup-quieta); }
+.chip.active{ background:var(--acc-velo); color:var(--accent-dark); border-color:transparent; }
+.chip .n{ color:var(--ink-fioco); opacity:1; }
+
+/* -------------------------------------------------------------------
+   6. Tiles di sintesi
+   ------------------------------------------------------------------- */
+.tile{ box-shadow:none; border:1px solid var(--line); background:var(--card); border-radius:var(--radius); }
+.tile .num{ color:var(--accent-dark); }
+.tile .lbl{ color:var(--muted); }
+.counts{ color:var(--muted); }
+
+/* -------------------------------------------------------------------
+   7. Sezioni (pagina d'ingresso al catalogo)
+   ------------------------------------------------------------------- */
+.sezione{ box-shadow:none; border:1px solid var(--line); }
+.sezione:hover{ border-color:var(--accent); transform:none; box-shadow:0 0 0 1px var(--accent); }
+.sezione .sez-lb{ color:var(--ink); }
+.sezione .sez-n{ color:var(--muted); }
+
+/* -------------------------------------------------------------------
+   8. Griglia e schede
+   ------------------------------------------------------------------- */
+.grid{ gap:16px; }
+.book{ box-shadow:none; border:1px solid var(--line); border-radius:var(--radius); }
+.book:hover{ transform:none; border-color:var(--filo-marcato); box-shadow:0 0 0 1px var(--filo-marcato); }
+.cover{ background:var(--sup-quieta); }
+.cover .noimg{ font-family:var(--f-ui); color:var(--ink-fioco); }
+.code{ background:rgba(23,23,26,.62); letter-spacing:.02em; }
+.catbadge{ background:rgba(255,255,255,.94); color:var(--accent-dark); box-shadow:var(--shadow); font-weight:500; }
+.binfo{ padding:9px 11px 12px; }
+.btitle{ font-size:13.5px; font-weight:500; }
+.bauthor{ color:var(--muted); }
+
+/* griglia "fitta" per la numismatica: schede quadrate, monete centrate */
+#catalog.fitta{ grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:14px; }
+#catalog.fitta .cover{ aspect-ratio:1/1; }
+#catalog.fitta .cover img{ object-fit:contain; padding:6%; }
+
+/* -------------------------------------------------------------------
+   9. Modale, dettaglio, form, tabelle
+   ------------------------------------------------------------------- */
+.modal{ border-radius:12px; }
+.field label{ color:var(--muted); font-weight:500; }
+.meta .auth{ color:var(--muted); }
+.kv dt{ color:var(--muted); }
+.pill{ font-weight:600; }
+
+table{ box-shadow:none; border:1px solid var(--line); border-radius:var(--radius); }
+th{ color:var(--muted); }
+th,td{ border-bottom:1px solid var(--filo-chiaro); }
+
+.setupbox{ box-shadow:none; border:1px solid var(--line); }
+.dropzone{ border-color:var(--accent); }
+.seclabel{ color:var(--muted); }
+
+/* -------------------------------------------------------------------
+   10. Stampa (le stampe reali sono via jsPDF; qui solo il fallback browser)
+   ------------------------------------------------------------------- */
+@media print{
+  header, .toolbar, #num-filters, #music-filters, #updatebar{ display:none !important; }
+  body{ background:#fff; }
+  .book{ break-inside:avoid; }
+}
