@@ -204,6 +204,7 @@
     <div class="tiles" id="tiles"></div>
     <div class="cat-percorso" id="cat-percorso" style="display:none"></div>
     <div class="cat-sintesi" id="cat-sintesi" style="display:none"></div>
+    <div id="home-head" style="display:none"></div>
     <div class="toolbar">
       <button class="btn secondary small" onclick="setCatFiltro('')">◂ Sezioni</button>
       <input type="search" id="q" placeholder="Cerca in tutti i campi: titolo, artista, interpreti, etichetta, tracce, crediti…" oninput="renderCatalog()">
@@ -534,6 +535,7 @@ let _pendingCoverUrl = null; // URL copertina da Discogs, allegata dopo il salva
 let _ofCat = null, _ofId = null, _ofWasNew = false;  // stato modale (per autosalvataggio)
 let _autosaveTimer = null, _autosaveBusy = false, _autosavePending = false, _savedTimer = null;
 let _acq = null;   // stato acquisizione rapida da cellulare (solo foto)
+let qGlobale = '';  // ricerca globale dalla home (tutte le sezioni)
 let catFiltro = '';        // categoria selezionata nel catalogo ('' = tutte)
 
 function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k) ?? mem[k] ?? null; localStorage.setItem(k,v); }catch(e){ if(v!==undefined) mem[k]=v; else return mem[k] ?? null; } }
@@ -777,7 +779,7 @@ function renderChips(){
   const chip = (key,icon,label,n)=>`<div class="chip ${catFiltro===key?'active':''}" onclick="setCatFiltro('${key}')">${icon?icon+' ':''}${esc(label)} <span class="n">${n}</span></div>`;
   el.innerHTML = chip('','◂','Sezioni',tot) + CAT.map(c=>chip(c.key,c.icon,c.label,contaCat(c.key))).join('');
 }
-function setCatFiltro(k){ catFiltro=k; renderChips(); renderCatalog(); }
+function setCatFiltro(k){ catFiltro=k; if(k) qGlobale=''; renderChips(); renderCatalog(); }
 function aggiungiSezioneCorrente(){ if(catFiltro){ addCat = catFiltro; show('aggiungi'); } }
 
 function renderAddChips(){
@@ -913,6 +915,115 @@ function resetFiltriNum(){
   ['nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
   renderCatalog();
 }
+/* ================== ICONE (Tabler, incorporate in locale) ==================
+   SVG inline: nessuna dipendenza da CDN, colorabili via currentColor. */
+const TABLER = {
+  frame:'<path d="M4 7l16 0"/><path d="M4 17l16 0"/><path d="M7 4l0 16"/><path d="M17 4l0 16"/>',
+  coin:'<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M14.8 9a2 2 0 0 0 -1.8 -1h-2a2 2 0 1 0 0 4h2a2 2 0 1 1 0 4h-2a2 2 0 0 1 -1.8 -1"/><path d="M12 7v10"/>',
+  disc:'<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M7 12a5 5 0 0 1 5 -5"/><path d="M12 17a5 5 0 0 0 5 -5"/>',
+  books:'<path d="M5 4m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"/><path d="M9 4m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"/><path d="M5 8h4"/><path d="M9 16h4"/><path d="M13.803 4.56l2.184 -.53c.562 -.135 1.133 .19 1.282 .732l3.695 13.418a1.02 1.02 0 0 1 -.634 1.219l-.133 .041l-2.184 .53c-.562 .135 -1.133 -.19 -1.282 -.732l-3.695 -13.418a1.02 1.02 0 0 1 .634 -1.219l.133 -.041z"/><path d="M14 9l4 -1"/><path d="M16 16l3.923 -.98"/>',
+  'stack-2':'<path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M4 16l8 4l8 -4"/>',
+  hexagon:'<path d="M19.875 6.27a2.225 2.225 0 0 1 1.125 1.948v7.284c0 .809 -.443 1.555 -1.158 1.948l-6.75 4.27a2.269 2.269 0 0 1 -2.184 0l-6.75 -4.27a2.225 2.225 0 0 1 -1.158 -1.948v-7.285c0 -.809 .443 -1.554 1.158 -1.947l6.75 -3.98a2.33 2.33 0 0 1 2.25 0l6.75 3.98h-.033z"/>',
+  armchair:'<path d="M5 11a2 2 0 0 1 2 2v2h10v-2a2 2 0 1 1 4 0v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z"/><path d="M5 11v-5a3 3 0 0 1 3 -3h8a3 3 0 0 1 3 3v5"/><path d="M6 19v2"/><path d="M18 19v2"/>',
+  diamond:'<path d="M6 5h12l3 5l-8.5 9.5a.7 .7 0 0 1 -1 0l-8.5 -9.5l3 -5"/><path d="M10 12l-2 -2.2l.6 -1"/>',
+  bottle:'<path d="M10 5h4v-2a1 1 0 0 0 -1 -1h-2a1 1 0 0 0 -1 1v2z"/><path d="M14 3.5c0 1.626 .507 3.212 1.45 4.537l.05 .07a8.093 8.093 0 0 1 1.5 4.694v6.199a2 2 0 0 1 -2 2h-6a2 2 0 0 1 -2 -2v-6.2c0 -1.682 .524 -3.322 1.5 -4.693l.05 -.07a7.823 7.823 0 0 0 1.45 -4.537"/><path d="M7 14.803a2.4 2.4 0 0 0 1 -.803a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 1 -.805"/>',
+  search:'<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/>',
+  plus:'<path d="M12 5l0 14"/><path d="M5 12l14 0"/>'
+};
+function ti(name, size){
+  const s = size || '1em';
+  return `<svg class="ti" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TABLER[name]||''}</svg>`;
+}
+const SEZ_ICON = { libri:'books', quadri:'frame', tappeti:'stack-2', sculture:'hexagon', mobili:'armchair', accessori:'diamond', ceramiche:'bottle', musica:'disc', numismatica:'coin' };
+const SEZ_BREVE = { quadri:'Quadri e stampe' };   // nomi accorciati per la home
+function sezNome(cat){ return SEZ_BREVE[cat.key] || cat.label; }
+
+/* ================== HOME (ingresso alle sezioni) ================== */
+let _homeInfo = null;
+function _euro(n){ return '€ ' + (n||0).toLocaleString('it-IT'); }
+function renderHome(){
+  const head = document.getElementById('home-head');
+  const info = CAT.map(c=>{
+    const items = (objs[c.key]||[]).filter(r=> c.key!=='libri' || (r.fields['Possesso']||'Posseduto')!=='Desiderato');
+    const val = items.reduce((s,r)=> s + (Number(r.fields['Valore stimato'])||0), 0);
+    const foto = items.slice().sort((a,b)=> (b.createdTime||'').localeCompare(a.createdTime||''))
+      .map(r=>({ url: coverSrc(c, r.fields), alt: (r.fields['Titolo']||'') + (r.fields[c.sub] ? ' — ' + r.fields[c.sub] : '') }))
+      .filter(x=>x.url).slice(0,3);
+    return { cat:c, n:items.length, val, foto };
+  });
+  const attive = info.filter(x=>x.n>0).sort((a,b)=> b.n-a.n);
+  const vuote  = info.filter(x=>x.n===0);
+  const totN   = attive.reduce((s,x)=>s+x.n,0);
+  const totVal = attive.reduce((s,x)=>s+x.val,0);
+  _homeInfo = { attive, vuote };
+  head.style.display = '';
+  head.innerHTML = `
+    <div class="home-top">
+      <div>
+        <h1 class="home-title">Collezione Dajlani</h1>
+        <p class="home-sub">${totN} ${totN===1?'oggetto':'oggetti'} in ${attive.length} ${attive.length===1?'sezione attiva':'sezioni attive'} · valore stimato <span class="valore">${_euro(totVal)}</span></p>
+      </div>
+      <label class="home-search">${ti('search')}<input type="search" id="q-home" placeholder="Cerca in tutto il catalogo" value="${escAttr(qGlobale)}" oninput="homeSearch(this.value)"></label>
+    </div>
+    ${ripartizioneHTML(attive, totN)}`;
+  renderHomeBody();
+}
+function ripartizioneHTML(attive, totN){
+  if(!totN) return '';
+  const greens = ['var(--acc)','var(--acc-2)','var(--acc-3)'];   // acc = accento verde bosco
+  const seg = [], leg = [];
+  attive.slice(0,3).forEach((x,i)=>{ seg.push({w:x.n/totN, col:greens[i]}); leg.push({col:greens[i], lbl:sezNome(x.cat), n:x.n}); });
+  const coda = attive.slice(3);
+  if(coda.length){ const cn = coda.reduce((s,x)=>s+x.n,0); seg.push({w:cn/totN, col:'var(--filo-marcato)'}); leg.push({col:'var(--filo-marcato)', lbl:'altre', n:cn}); }
+  const bar = `<div class="home-bar" role="img" aria-label="Ripartizione degli oggetti per sezione">${seg.map(s=>`<span style="width:${(s.w*100).toFixed(2)}%; background:${s.col}"></span>`).join('')}</div>`;
+  const legend = `<div class="home-legend">${leg.map(l=>`<span><i style="background:${l.col}"></i>${esc(l.lbl)} ${l.n}</span>`).join('')}</div>`;
+  return bar + legend;
+}
+function renderHomeBody(){
+  const cont = document.getElementById('catalog');
+  cont.className = '';
+  if(qGlobale.trim()){ renderRicercaGlobale(); return; }
+  const { attive, vuote } = _homeInfo || { attive:[], vuote:[] };
+  const cards = attive.map(x=>schedaSezione(x)).join('');
+  const avvia = vuote.length ? `
+    <div class="home-avvia-lab">Sezioni da avviare</div>
+    <div class="home-avvia">${vuote.map(x=>`
+      <div class="avvia-row">
+        <span class="avvia-ic">${ti(SEZ_ICON[x.cat.key]||'diamond')}</span>
+        <span class="avvia-nome">${esc(sezNome(x.cat))}</span>
+        <button class="avvia-add" title="Aggiungi il primo oggetto" aria-label="Aggiungi in ${esc(sezNome(x.cat))}" onclick="avviaSezione('${x.cat.key}')">${ti('plus')}</button>
+      </div>`).join('')}</div>` : '';
+  cont.innerHTML = `<div class="home-grid">${cards}</div>${avvia}`;
+  document.getElementById('catalog-empty').classList.add('hidden');
+}
+function schedaSezione(x){
+  const c = x.cat;
+  return `<a class="sez-card" href="#" onclick="setCatFiltro('${c.key}');return false" aria-label="${escAttr(sezNome(c))}, ${x.n} ${x.n===1?'oggetto':'oggetti'}">
+    ${mosaicoHTML(x.foto, c)}
+    <div class="sez-foot">
+      <div class="sez-foot-top">${ti(SEZ_ICON[c.key]||'diamond')}<span class="sez-nome">${esc(sezNome(c))}</span></div>
+      <div class="sez-foot-bot"><span class="sez-n">${x.n} ${x.n===1?'oggetto':'oggetti'}</span><span class="sez-val">${_euro(x.val)}</span></div>
+    </div>
+  </a>`;
+}
+function mosaicoHTML(foto, c){
+  if(!foto.length) return `<div class="sez-mos vuoto">${ti(SEZ_ICON[c.key]||'diamond','28')}</div>`;
+  const img = f => `<img src="${esc(f.url)}" alt="${escAttr(f.alt)}" loading="lazy" onerror="this.style.visibility='hidden'">`;
+  if(foto.length===1) return `<div class="sez-mos uno">${img(foto[0])}</div>`;
+  if(foto.length===2) return `<div class="sez-mos due">${img(foto[0])}${img(foto[1])}</div>`;
+  return `<div class="sez-mos tre"><div class="mos-big">${img(foto[0])}</div><div class="mos-side">${img(foto[1])}${img(foto[2])}</div></div>`;
+}
+function homeSearch(v){ qGlobale = v; renderHomeBody(); }
+function renderRicercaGlobale(){
+  const cont = document.getElementById('catalog');
+  const termini = qGlobale.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  let list = tuttiOggetti().filter(({cat,rec})=>{ const hay = testoCercabile(cat,rec); return termini.every(t=>hay.includes(t)); });
+  list.sort((a,b)=> String(a.rec.fields['Titolo']||'').localeCompare(String(b.rec.fields['Titolo']||''),'it'));
+  const testa = `<p class="home-ric-head">${list.length} ${list.length===1?'risultato':'risultati'} per «${esc(qGlobale.trim())}» in tutto il catalogo</p>`;
+  cont.innerHTML = testa + `<div class="grid">${list.map(x=>cardHTML(x.cat, x.rec, [])).join('')}</div>`;
+}
+function avviaSezione(key){ if(key==='libri' && typeof openBookForm==='function') openBookForm(null); else openObjForm(key, null); }
+
 /* Testata di sezione: percorso (breadcrumb) + riga di sintesi con conteggi per stato e valore. */
 function renderTestata(cat){
   const perc = document.getElementById('cat-percorso'), sint = document.getElementById('cat-sintesi');
@@ -969,21 +1080,15 @@ function renderCatalog(){
     if(toolbar) toolbar.style.display = 'none';
     if(mfBox) mfBox.style.display = 'none';
     if(nfBox) nfBox.style.display = 'none';
-    const tl=document.getElementById('tiles'); if(tl) tl.style.display='';
+    const tl=document.getElementById('tiles'); if(tl) tl.style.display='none';   // niente più fila di conteggi
     ['cat-percorso','cat-sintesi','cat-attivi'].forEach(id=>{ const e=document.getElementById(id); if(e){ e.style.display='none'; e.innerHTML=''; } });
-    cont.className = 'sezioni';
-    cont.innerHTML = CAT.map(c=>{
-      const n = contaCat(c.key);
-      return `<div class="sezione" onclick="setCatFiltro('${c.key}')">
-        <div class="sez-ic">${c.icon}</div>
-        <div class="sez-lb">${esc(c.label)}</div>
-        <div class="sez-n">${n} ${n===1?'oggetto':'oggetti'}</div>
-      </div>`;
-    }).join('');
-    document.getElementById('count').textContent = `${CAT.length} sezioni`;
+    const cnt=document.getElementById('count'); if(cnt) cnt.style.display='none';
     document.getElementById('catalog-empty').classList.add('hidden');
+    renderHome();
     return;
   }
+  const hh=document.getElementById('home-head'); if(hh) hh.style.display='none';
+  const cnt2=document.getElementById('count'); if(cnt2) cnt2.style.display='';
   if(toolbar) toolbar.style.display = '';
   cont.className = 'grid';
   cont.classList.toggle('fitta', catFiltro==='numismatica');   // monete: schede quadrate
