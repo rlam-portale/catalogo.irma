@@ -236,6 +236,7 @@
       <select id="nf-metallo" onchange="renderCatalog()"><option value="">Metallo: tutti</option></select>
       <select id="nf-autorita" onchange="renderCatalog()"><option value="">Autorità: tutte</option></select>
       <button class="btn secondary small" onclick="resetFiltriNum()">↺ Azzera filtri</button>
+      <button class="btn secondary small" onclick="ricalcolaStimeNumismatica()" title="Ricalcola il Valore stimato dal Valore di catalogo per tutte le monete">🧮 Ricalcola stime</button>
     </div>
     <div class="cat-attivi" id="cat-attivi" style="display:none"></div>
     <div class="counts" id="count"></div>
@@ -914,6 +915,20 @@ function popolaFiltriNum(){
 function resetFiltriNum(){
   ['nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
   renderCatalog();
+}
+/* Ricalcolo in blocco del Valore stimato di tutte le monete, dal Valore di catalogo. */
+async function ricalcolaStimeNumismatica(){
+  const cat = catByKey('numismatica');
+  const da = (objs.numismatica||[]).map(r=>({ r, nuovo: stimaDaCatalogo(r.fields['Valore di catalogo']) }))
+    .filter(x=> x.nuovo!=null && x.nuovo!==(Number(x.r.fields['Valore stimato'])||null));
+  if(!da.length){ toast('Nessuna stima da aggiornare'); return; }
+  if(!confirm(`Ricalcolare il Valore stimato di ${da.length} monete dal Valore di catalogo?`)) return;
+  toast(`Aggiorno ${da.length} monete…`);
+  let ok=0;
+  for(const {r,nuovo} of da){
+    try{ const j = await updateRec(cat.tbl, r.id, {'Valore stimato':nuovo}); patchRec('numismatica', r.id, j); ok++; }catch(e){}
+  }
+  fillFilters(); renderAll(); toast(`✅ Stime aggiornate: ${ok}/${da.length}`);
 }
 /* ================== ICONE (Tabler, incorporate in locale) ==================
    SVG inline: nessuna dipendenza da CDN, colorabili via currentColor. */
@@ -2302,11 +2317,11 @@ function raccogliCampi(cat){
     const aid = sel ? sel.value : '';
     fields[AUTORE_LINK] = (aid && aid!=='__new__') ? [aid] : [];   // il nome resta nel campo testo
   }
-  // Numismatica: il Valore stimato deriva dal Valore di catalogo → massimo della forbice.
+  // Numismatica: il Valore stimato deriva dal Valore di catalogo → massimo degli importi in €.
   // Sta qui (non solo in saveObj) così vale anche per autosalvataggio e "Salva e chiudi".
   if(cat.key==='numismatica'){
-    const imp = parseImporti(fields['Valore di catalogo']);
-    if(imp.length) fields['Valore stimato'] = Math.max(...imp);
+    const st = stimaDaCatalogo(fields['Valore di catalogo']);
+    if(st!=null) fields['Valore stimato'] = st;
   }
   return fields;
 }
@@ -2394,16 +2409,27 @@ function parseImporti(s){
   const nonAnno = all.filter(x=>!x.anno).map(x=>x.n);
   return nonAnno.length ? nonAnno : all.map(x=>x.n);
 }
+/* Importi legati esplicitamente a € / euro (anche forbici "15–25 €" o "€ 150 - 300"),
+   così pesi, diametri e numeri di catalogo nel testo non falsano la stima. */
+function importiEuro(s){
+  s = String(s||'');
+  const nums = [];
+  const re = /(?:€|eur(?:o)?\b)\s*([\d][\d.,]*(?:\s*[–\-aA]\s*[\d][\d.,]*)?)|([\d][\d.,]*(?:\s*[–\-aA]\s*[\d][\d.,]*)?)\s*(?:€|eur(?:o)?\b)/gi;
+  let m;
+  while((m = re.exec(s))){ parseImporti(m[1] || m[2] || '').forEach(n=>nums.push(n)); }
+  return nums;
+}
+/* Stima (massimo) dal campo "Valore di catalogo": prima gli importi in euro, poi ripiego su tutti i numeri. */
+function stimaDaCatalogo(testo){
+  let imp = importiEuro(testo);
+  if(!imp.length) imp = parseImporti(testo);
+  return imp.length ? Math.max(...imp) : null;
+}
 
 async function saveObj(catKey, id){
   const cat = catByKey(catKey);
-  const fields = raccogliCampi(cat);
+  const fields = raccogliCampi(cat);   // include già la derivazione del Valore stimato per la numismatica
   if(!fields['Titolo']){ toast('Il titolo è obbligatorio'); return; }
-  // Numismatica: il Valore stimato deriva dal Valore di catalogo → massimo della forbice
-  if(catKey==='numismatica'){
-    const imp = parseImporti(fields['Valore di catalogo']);
-    if(imp.length) fields['Valore stimato'] = Math.max(...imp);
-  }
   // Blocca i doppioni dei supporti musicali (stesso barcode, o catalogo+etichetta, o titolo+artista)
   if(catKey==='musica' && !id){
     const dup = trovaDoppioneMusica(fields);
