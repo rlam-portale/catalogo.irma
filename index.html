@@ -509,10 +509,45 @@ const CAMPI_COMUNI = [
   {k:'Note', l:'Note', t:'area', full:1}
 ];
 Object.keys(CAMPI).forEach(k => CAMPI[k] = CAMPI[k].concat(CAMPI_COMUNI));
-/* Campi di valorizzazione mostrati in un blocco evidenziato IN CIMA al modulo. */
+/* Campi di valorizzazione mostrati in un blocco evidenziato IN CIMA al modulo.
+   Includono i gradi di conservazione/rarità, che incidono sulla stima. */
 const VALOR = {
-  numismatica: ['Valore di catalogo','Valore stimato','Valore assicurato','Prezzo acquisto','Fonte della stima','Note di mercato','Data acquisizione','Data stima']
+  numismatica: ['Valore di catalogo',
+    'Stato di conservazione','Grado Sheldon','Grado di rarità',
+    'Conservazione dichiarata dal venditore','Sigillatura o perizia',
+    'Valore stimato','Valore assicurato','Prezzo acquisto',
+    'Fonte della stima','Note di mercato','Data acquisizione','Data stima']
 };
+/* Significato mostrato accanto al grado scelto (conservazione, rarità, Sheldon). */
+const SIGNIFICATI = {
+  'Stato di conservazione': {
+    'FDC':'Fior di Conio — perfetta, mai circolata, lustro di zecca integro',
+    'qFDC':'quasi Fior di Conio — minimi segni, lustro quasi pieno',
+    'SPL':'Splendida — circolata pochissimo, rilievi integri',
+    'qSPL':'quasi Splendida — lievi tracce di circolazione',
+    'BB':'Bellissima — ha circolato, rilievi ben chiari e visibili',
+    'MB':'Molto Bella — molto usata, dettagli parzialmente consumati',
+    'B':'Bella — fortemente usurata, rilievi quasi lisci, legende poco leggibili'
+  },
+  'Grado di rarità': {
+    'CC':'Comunissima','C':'Comune','NC':'Non comune','R':'Rara',
+    'R1':'Rara — livello 1','R2':'Rara — livello 2','R3':'Molto rara — livello 3',
+    'R4':'Rarissima — livello 4','R5':'Estremamente rara — pochissimi esemplari noti (livello 5)'
+  },
+  'Grado Sheldon': {
+    'PO-1':'Poor — a malapena identificabile','FR-2':'Fair — molto consunta','AG-3':'About Good — quasi discreta',
+    'G-4':'Good — consunta, tipi leggibili','G-6':'Good — consunta','VG-8':'Very Good — molto consunta ma completa','VG-10':'Very Good',
+    'F-12':'Fine — dettagli parziali','F-15':'Fine','VF-20':'Very Fine — dettagli discreti','VF-25':'Very Fine','VF-30':'Very Fine','VF-35':'Very Fine',
+    'XF-40':"Extremely Fine — lievi tracce d'usura",'XF-45':'Extremely Fine',
+    'AU-50':'About Uncirculated — minima usura','AU-53':'About Uncirculated','AU-55':'About Uncirculated','AU-58':'About Uncirculated — quasi FDC',
+    'MS-60':'Mint State — non circolata, con segni','MS-61':'Mint State','MS-62':'Mint State','MS-63':'Mint State — scelta','MS-64':'Mint State','MS-65':'Mint State — gemma','MS-66':'Mint State','MS-67':'Mint State','MS-68':'Mint State','MS-69':'Mint State — quasi perfetta','MS-70':'Mint State — perfetta'
+  }
+};
+function _significato(key, val){ const m = SIGNIFICATI[key]; return (m && val && m[val]) ? m[val] : ''; }
+function _mostraSignificato(idA, key){
+  const sel=document.getElementById(idA), el=document.getElementById('sig-'+idA);
+  if(sel && el) el.textContent = _significato(key, sel.value);
+}
 
 /* Categorie del catalogo. 'biblio' marca i Libri, che tengono ISBN/scansioni/CSV/prestiti/wishlist. */
 const CAT = [
@@ -2249,7 +2284,10 @@ function openObjForm(catKey, id, prefill){
     else if(fld.t==='sel'){
       // preserva un eventuale valore già presente ma fuori dall'elenco (es. campi prima liberi)
       const extra = (val && !fld.ch.includes(val)) ? `<option selected>${esc(val)}</option>` : '';
-      inner = `<select id="${idA}"><option value=""></option>${extra}${fld.ch.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+      const sig = SIGNIFICATI[fld.k];
+      const onch = sig ? ` onchange="_mostraSignificato('${idA}','${fld.k}')"` : '';
+      inner = `<select id="${idA}"${onch}><option value=""></option>${extra}${fld.ch.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+      if(sig) inner += `<div class="sig-hint" id="sig-${idA}">${esc(_significato(fld.k, val))}</div>`;
     }
     else if(fld.t==='num') inner = `<input id="${idA}" type="number" step="any" value="${val??''}">`;
     else if(fld.t==='date') inner = `<input id="${idA}" type="date" value="${val||''}">`;

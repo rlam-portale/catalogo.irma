@@ -293,3 +293,8 @@ th,td{ border-bottom:1px solid var(--filo-chiaro); }
 .val-grid .field label{ color:var(--accent-dark); font-weight:600; }
 .val-grid input, .val-grid select, .val-grid textarea{ border-color:var(--accent); background:var(--card); }
 .val-grid .curbox .cur-sym{ color:var(--accent-dark); }
+
+/* significato del grado, sotto il menu a tendina */
+.sig-hint{ font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4; }
+.sig-hint:empty{ display:none; }
+.val-grid .sig-hint{ color:var(--accent-dark); }
