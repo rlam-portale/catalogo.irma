@@ -2359,6 +2359,11 @@ async function _doAutosalva(){
   if(_autosaveBusy){ _autosavePending = true; return; }
   const cat = catByKey(_ofCat);
   const fields = raccogliCampi(cat);
+  // rispecchia a video il Valore stimato appena derivato dal Valore di catalogo (monete)
+  if(cat.key==='numismatica'){
+    const el = document.getElementById('of-' + cssId('Valore stimato'));
+    if(el) el.value = (fields['Valore stimato']!=null ? fields['Valore stimato'] : '');
+  }
   if(!fields['Titolo']) return;                 // senza titolo non si salva
   if(_ofCat==='musica' && !_ofId) return;       // musica nuovo: salvataggio esplicito (doppioni + copertina)
   _autosaveBusy = true;
