@@ -2302,6 +2302,12 @@ function raccogliCampi(cat){
     const aid = sel ? sel.value : '';
     fields[AUTORE_LINK] = (aid && aid!=='__new__') ? [aid] : [];   // il nome resta nel campo testo
   }
+  // Numismatica: il Valore stimato deriva dal Valore di catalogo → massimo della forbice.
+  // Sta qui (non solo in saveObj) così vale anche per autosalvataggio e "Salva e chiudi".
+  if(cat.key==='numismatica'){
+    const imp = parseImporti(fields['Valore di catalogo']);
+    if(imp.length) fields['Valore stimato'] = Math.max(...imp);
+  }
   return fields;
 }
 async function onAutoreChange(){
