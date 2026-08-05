@@ -2246,7 +2246,7 @@ function openObjForm(catKey, id, prefill){
     }
     else if(fld.t==='num') inner = `<input id="${idA}" type="number" step="any" value="${val??''}">`;
     else if(fld.t==='date') inner = `<input id="${idA}" type="date" value="${val||''}">`;
-    else if(fld.t==='cur') inner = `<input id="${idA}" type="number" step="0.01" value="${val??''}">`;
+    else if(fld.t==='cur') inner = `<div class="curbox"><span class="cur-sym">€</span><input id="${idA}" type="number" step="0.01" value="${val??''}"></div>`;
     else inner = `<input id="${idA}" value="${escAttr(val||'')}">`;
     return `<div class="field"${full}><label>${esc(fld.l)}</label>${inner}</div>`;
   };

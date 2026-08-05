@@ -280,3 +280,8 @@ th,td{ border-bottom:1px solid var(--filo-chiaro); }
 .et-cell{ border:1px solid var(--line); border-radius:2px; cursor:pointer; background:var(--sup-carta,#fff); }
 .et-cell.used{ background:var(--accent); border-color:var(--accent); }
 .et-cell.preview{ box-shadow:0 0 0 1px var(--accent) inset; }
+
+/* ===== Campi in valuta: simbolo € dentro il campo ===== */
+.curbox{ position:relative; display:flex; align-items:center; }
+.curbox .cur-sym{ position:absolute; left:11px; color:var(--muted); pointer-events:none; font-size:13px; }
+.curbox input{ width:100%; padding-left:26px; }
