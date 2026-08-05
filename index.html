@@ -916,13 +916,16 @@ function resetFiltriNum(){
   ['nf-cons','nf-rar','nf-shel','nf-metallo','nf-autorita'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
   renderCatalog();
 }
-/* Ricalcolo in blocco del Valore stimato di tutte le monete, dal Valore di catalogo. */
+/* Riempie il Valore stimato delle monete che ne sono PRIVE, dal Valore di catalogo.
+   Non tocca le monete che hanno già un valore (anche se inserito a mano). */
 async function ricalcolaStimeNumismatica(){
   const cat = catByKey('numismatica');
-  const da = (objs.numismatica||[]).map(r=>({ r, nuovo: stimaDaCatalogo(r.fields['Valore di catalogo']) }))
-    .filter(x=> x.nuovo!=null && x.nuovo!==(Number(x.r.fields['Valore stimato'])||null));
-  if(!da.length){ toast('Nessuna stima da aggiornare'); return; }
-  if(!confirm(`Ricalcolare il Valore stimato di ${da.length} monete dal Valore di catalogo?`)) return;
+  const vuoto = v => v==null || v==='';
+  const da = (objs.numismatica||[]).filter(r=> vuoto(r.fields['Valore stimato']))
+    .map(r=>({ r, nuovo: stimaDaCatalogo(r.fields['Valore di catalogo']) }))
+    .filter(x=> x.nuovo!=null);
+  if(!da.length){ toast('Nessuna moneta senza valore stimato da riempire'); return; }
+  if(!confirm(`Riempire il Valore stimato di ${da.length} monete che ne sono prive (dal Valore di catalogo)?\n\nLe monete con un valore già inserito non vengono toccate.`)) return;
   toast(`Aggiorno ${da.length} monete…`);
   let ok=0;
   for(const {r,nuovo} of da){
@@ -2317,9 +2320,10 @@ function raccogliCampi(cat){
     const aid = sel ? sel.value : '';
     fields[AUTORE_LINK] = (aid && aid!=='__new__') ? [aid] : [];   // il nome resta nel campo testo
   }
-  // Numismatica: il Valore stimato deriva dal Valore di catalogo → massimo degli importi in €.
-  // Sta qui (non solo in saveObj) così vale anche per autosalvataggio e "Salva e chiudi".
-  if(cat.key==='numismatica'){
+  // Numismatica: il Valore stimato deriva dal Valore di catalogo (massimo degli importi in €),
+  // ma SOLO se il campo è vuoto. Un valore inserito a mano ha la precedenza e non viene sovrascritto;
+  // per far ricalcolare la stima basta svuotare il campo.
+  if(cat.key==='numismatica' && (fields['Valore stimato']==null || fields['Valore stimato']==='')){
     const st = stimaDaCatalogo(fields['Valore di catalogo']);
     if(st!=null) fields['Valore stimato'] = st;
   }
