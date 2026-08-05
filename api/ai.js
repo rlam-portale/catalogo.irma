@@ -127,13 +127,28 @@ ${formaJson}`;
   };
 
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify(payload)
-    });
-    const j = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: { message: (j.error && j.error.message) || ('Errore AI ' + r.status) } });
+    // Anthropic può rispondere 529 (Overloaded) o 429 (rate limit): riprova da sé con attesa crescente.
+    const RETRY = new Set([429, 500, 503, 529]);
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    let r, j, tent = 0;
+    while (true) {
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify(payload)
+      });
+      j = await r.json();
+      if (r.ok || !RETRY.has(r.status) || tent >= 3) break;
+      tent++;
+      await sleep(1500 * tent);   // 1.5s, 3s, 4.5s
+    }
+    if (!r.ok) {
+      const overloaded = r.status === 529 || /overloaded/i.test((j.error && j.error.message) || '');
+      const msg = overloaded
+        ? 'I server AI (Anthropic) sono momentaneamente sovraccarichi. Riprova tra un minuto con «Rianalizza».'
+        : ((j.error && j.error.message) || ('Errore AI ' + r.status));
+      return res.status(r.status).json({ error: { message: msg } });
+    }
 
     const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
     let parsed = null;
