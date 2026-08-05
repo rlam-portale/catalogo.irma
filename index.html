@@ -509,6 +509,10 @@ const CAMPI_COMUNI = [
   {k:'Note', l:'Note', t:'area', full:1}
 ];
 Object.keys(CAMPI).forEach(k => CAMPI[k] = CAMPI[k].concat(CAMPI_COMUNI));
+/* Campi di valorizzazione mostrati in un blocco evidenziato IN CIMA al modulo. */
+const VALOR = {
+  numismatica: ['Valore di catalogo','Valore stimato','Valore assicurato','Prezzo acquisto','Fonte della stima','Note di mercato','Data acquisizione','Data stima']
+};
 
 /* Categorie del catalogo. 'biblio' marca i Libri, che tengono ISBN/scansioni/CSV/prestiti/wishlist. */
 const CAT = [
@@ -2253,6 +2257,10 @@ function openObjForm(catKey, id, prefill){
     else inner = `<input id="${idA}" value="${escAttr(val||'')}">`;
     return `<div class="field"${full}><label>${esc(fld.l)}</label>${inner}</div>`;
   };
+  // Blocco "Valorizzazione" evidenziato in cima (per le categorie che lo prevedono)
+  const valKeys = VALOR[catKey] || [];
+  const valSet = new Set(valKeys);
+  const valBlock = valKeys.map(k=>{ const fld = cat.campi.find(x=>x.k===k); return fld ? campo(fld) : ''; }).join('');
   modal(`
     <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px">
       <h2 style="margin:0; flex:1; min-width:180px">${o?'Modifica':'Nuovo'} — ${esc(cat.label)}</h2>
@@ -2265,7 +2273,8 @@ function openObjForm(catKey, id, prefill){
                title="Assegnato automaticamente dall'app. Non modificabile."></div>
       ${cat.musica ? `<div class="field"><label>Numero posizione</label><input id="of-${cssId('Numero posizione')}" value="${escAttr(f['Numero posizione']||'')}"></div>` : ''}
       <div class="field" style="grid-column:1/-1"><label>Titolo / denominazione *</label><input id="of-titolo" value="${escAttr(f['Titolo']||'')}"></div>
-      ${cat.campi.filter(x=>x.k!=='Note' && x.k!=='Numero posizione').map(campo).join('')}
+      ${valBlock ? `<div class="val-box" style="grid-column:1/-1"><div class="val-box-lab">💰 Valorizzazione</div><div class="val-grid">${valBlock}</div></div>` : ''}
+      ${cat.campi.filter(x=>x.k!=='Note' && x.k!=='Numero posizione' && !valSet.has(x.k)).map(campo).join('')}
       <div class="field"><label>Collocazione</label><select id="of-coll"><option value=""></option>${colls.map(c=>`<option value="${c.id}" ${(f['Collocazione']||[]).includes(c.id)?'selected':''}>${esc(c.fields['Nome']||'')}</option>`).join('')}</select></div>
       <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="of-note">${esc(f['Note']||'')}</textarea></div>
     </div>
