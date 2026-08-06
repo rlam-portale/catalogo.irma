@@ -2921,14 +2921,19 @@ function _apriEditorRitaglio(work, meta){
   const scale=Math.min(maxW/work.width, maxH/work.height, 1);
   const cw=Math.round(work.width*scale), ch=Math.round(work.height*scale);
   const side=Math.round(Math.min(cw,ch)*0.85);
-  _crop={ work, scale, cw, ch, cx:cw/2, cy:ch/2, side, drag:null, start:null, catKey:meta.catKey, id:meta.id, name:meta.name, replaceAttId:meta.replaceAttId||null };
+  _crop={ work, src:work, angle:0, scale, cw, ch, cx:cw/2, cy:ch/2, side, drag:null, start:null, catKey:meta.catKey, id:meta.id, name:meta.name, replaceAttId:meta.replaceAttId||null };
   const ov=document.createElement('div'); ov.id='crop-ov';
   ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
-  ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:600px">${meta.replaceAttId?'Modifica l\'immagine: ':''}centra la moneta nel <b>riquadro quadrato</b> (trascina per spostarlo, <b>angoli</b> per ridimensionarlo) e usa <b>⟲ ⟳</b> per ruotarla.</div>
-    <canvas id="crop-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:60vh; touch-action:none; background:#000; border-radius:6px; cursor:move"></canvas>
+  ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:620px">${meta.replaceAttId?'Modifica l\'immagine: ':''}centra la moneta nel <b>riquadro quadrato</b> (trascina per spostarlo, <b>angoli</b> per ridimensionarlo), <b>⟲ ⟳</b> per ruotare di 90° e il <b>cursore</b> per raddrizzare.</div>
+    <canvas id="crop-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:58vh; touch-action:none; background:#000; border-radius:6px; cursor:move"></canvas>
+    <div style="display:flex; align-items:center; gap:10px; color:#fff; font-size:13px; width:min(100%,440px)">
+      <span>Raddrizza</span>
+      <input type="range" id="crop-slider" min="-20" max="20" step="0.5" value="0" oninput="raddrizzaRitaglio(this.value)" style="flex:1">
+      <span id="crop-ang" style="min-width:44px; text-align:right; font-family:var(--f-mono)">0°</span>
+    </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center">
-      <button class="btn secondary" onclick="ruotaRitaglio(-1)" title="Ruota a sinistra">⟲</button>
-      <button class="btn secondary" onclick="ruotaRitaglio(1)" title="Ruota a destra">⟳</button>
+      <button class="btn secondary" onclick="ruotaRitaglio(-1)" title="Ruota a sinistra 90°">⟲ 90°</button>
+      <button class="btn secondary" onclick="ruotaRitaglio(1)" title="Ruota a destra 90°">90° ⟳</button>
       <button class="btn secondary" onclick="chiudiRitaglio()">Annulla</button>
       <button class="btn" id="crop-ok" onclick="confermaRitaglio()">${meta.replaceAttId?'✏️ Salva modifiche':'◻ Ritaglia e carica'}</button>
     </div>`;
@@ -2951,17 +2956,36 @@ function _apriEditorRitaglio(work, meta){
   cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
   drawCrop();
 }
-/* Ruota di 90° l'immagine di lavoro (dir: 1 = orario, -1 = antiorario) e ricalcola la vista. */
+/* Ruota di 90° l'immagine SORGENTE (dir: 1 = orario, -1 = antiorario); il raddrizzamento fine resta applicato. */
 function ruotaRitaglio(dir){
   const c=_crop; if(!c) return;
-  const src=c.work, rc=document.createElement('canvas'); rc.width=src.height; rc.height=src.width;
+  const src=c.src, rc=document.createElement('canvas'); rc.width=src.height; rc.height=src.width;
   const ctx=rc.getContext('2d');
   if(dir>0){ ctx.translate(rc.width,0); ctx.rotate(Math.PI/2); } else { ctx.translate(0,rc.height); ctx.rotate(-Math.PI/2); }
   ctx.drawImage(src,0,0);
+  c.src=rc; _rigeneraWork();
+}
+/* Raddrizzamento fine: imposta l'angolo (gradi) dal cursore. */
+function raddrizzaRitaglio(val){
+  const c=_crop; if(!c) return;
+  c.angle=Number(val)||0;
+  const lab=document.getElementById('crop-ang'); if(lab) lab.textContent=(c.angle>0?'+':'')+c.angle+'°';
+  _rigeneraWork();
+}
+/* Rigenera l'immagine di lavoro applicando alla sorgente l'angolo fine, e ricalcola la vista. */
+function _rigeneraWork(){
+  const c=_crop; if(!c) return;
+  const src=c.src, a=(c.angle||0)*Math.PI/180, sw=src.width, sh=src.height;
+  const cos=Math.abs(Math.cos(a)), sin=Math.abs(Math.sin(a));
+  const nw=Math.max(1,Math.ceil(sw*cos+sh*sin)), nh=Math.max(1,Math.ceil(sw*sin+sh*cos));
+  const rc=document.createElement('canvas'); rc.width=nw; rc.height=nh;
+  const ctx=rc.getContext('2d');
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,nw,nh);            // sfondo bianco: nessun angolo nero in JPEG
+  ctx.translate(nw/2,nh/2); ctx.rotate(a); ctx.drawImage(src,-sw/2,-sh/2);
   c.work=rc;
-  const maxW=Math.min(window.innerWidth-32, 900), maxH=window.innerHeight*0.60;
-  c.scale=Math.min(maxW/rc.width, maxH/rc.height, 1);
-  c.cw=Math.round(rc.width*c.scale); c.ch=Math.round(rc.height*c.scale);
+  const maxW=Math.min(window.innerWidth-32, 900), maxH=window.innerHeight*0.58;
+  c.scale=Math.min(maxW/nw, maxH/nh, 1);
+  c.cw=Math.round(nw*c.scale); c.ch=Math.round(nh*c.scale);
   c.cx=c.cw/2; c.cy=c.ch/2; c.side=Math.round(Math.min(c.cw,c.ch)*0.85);
   const cv=document.getElementById('crop-cv'); if(cv){ cv.width=c.cw; cv.height=c.ch; }
   clampCrop(); drawCrop();
