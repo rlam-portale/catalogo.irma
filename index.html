@@ -236,6 +236,7 @@
       <select id="nf-metallo" onchange="renderCatalog()"><option value="">Metallo: tutti</option></select>
       <select id="nf-autorita" onchange="renderCatalog()"><option value="">Autorità: tutte</option></select>
       <button class="btn secondary small" onclick="resetFiltriNum()">↺ Azzera filtri</button>
+      <button class="btn secondary small" id="nf-vista" onclick="toggleVistaTab()">▤ Tabella</button>
       <button class="btn secondary small" onclick="ricalcolaStimeNumismatica()" title="Ricalcola il Valore stimato dal Valore di catalogo per tutte le monete">🧮 Ricalcola stime</button>
     </div>
     <div class="cat-attivi" id="cat-attivi" style="display:none"></div>
@@ -1127,6 +1128,43 @@ function clearTuttiFiltri(){
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   renderCatalog();
 }
+/* ===== Vista tabellare (numismatica): righe senza immagini, colonne ordinabili ===== */
+let _vistaTab = false;
+let _tabSort = { k:'Codice', dir:1 };
+const TAB_NUM_COLS = [
+  { k:'Codice', l:'Codice', sortNum:true, get:o=>Number(o.fields['Codice']||0), disp:o=>codeStr(catByKey('numismatica'), o.fields) },
+  { k:'Titolo', l:'Denominazione', get:o=>o.fields['Titolo']||'' },
+  { k:'Autorità emittente', l:'Autorità', get:o=>o.fields['Autorità emittente']||'' },
+  { k:'Anno o millesimo', l:'Anno', get:o=>o.fields['Anno o millesimo']||'' },
+  { k:'Metallo o lega', l:'Metallo', get:o=>o.fields['Metallo o lega']||'' },
+  { k:'Stato di conservazione', l:'Cons.', get:o=>o.fields['Stato di conservazione']||'' },
+  { k:'Grado di rarità', l:'Rarità', get:o=>o.fields['Grado di rarità']||'' },
+  { k:'Grado Sheldon', l:'Sheldon', get:o=>o.fields['Grado Sheldon']||'' },
+  { k:'Valore stimato', l:'Valore', sortNum:true, right:true, cur:true, get:o=>Number(o.fields['Valore stimato']||0) }
+];
+function toggleVistaTab(){ _vistaTab = !_vistaTab; renderCatalog(); }
+function ordinaTab(k){ if(_tabSort.k===k) _tabSort.dir*=-1; else _tabSort={k, dir:1}; renderCatalog(); }
+function renderTabellaNum(list){
+  const cont = document.getElementById('catalog'); cont.className = 'tabella-wrap';
+  const col = TAB_NUM_COLS.find(c=>c.k===_tabSort.k) || TAB_NUM_COLS[0];
+  list = list.slice().sort((a,b)=>{
+    const va=col.get(a.rec), vb=col.get(b.rec);
+    const r = col.sortNum ? (va-vb) : String(va).localeCompare(String(vb),'it',{numeric:true});
+    return r * _tabSort.dir;
+  });
+  const frecc = k => _tabSort.k===k ? (_tabSort.dir>0?' ▲':' ▼') : '';
+  const head = TAB_NUM_COLS.map(c=>`<th onclick="ordinaTab('${c.k}')" class="${c.right?'num':''}">${esc(c.l)}${frecc(c.k)}</th>`).join('');
+  const rows = list.map(x=>{
+    const o = x.rec;
+    const tds = TAB_NUM_COLS.map(c=>{
+      const raw = c.disp ? c.disp(o) : c.get(o);
+      const txt = c.cur ? (raw ? fmtCur(raw) : '') : String(raw==null?'':raw);
+      return `<td class="${c.right?'num':''}">${esc(txt)}</td>`;
+    }).join('');
+    return `<tr onclick="openDetail('numismatica','${o.id}')">${tds}</tr>`;
+  }).join('');
+  cont.innerHTML = `<div class="tab-scroll"><table class="tab-num"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 function renderCatalog(){
   const toolbar = document.querySelector('#view-catalogo .toolbar');
   const cont = document.getElementById('catalog');
@@ -1155,7 +1193,7 @@ function renderCatalog(){
   if(_cc) renderTestata(_cc);
   if(catFiltro==='musica'){ if(mfBox){ mfBox.style.display=''; popolaFiltriMusica(); } }
   else if(mfBox) mfBox.style.display = 'none';
-  if(catFiltro==='numismatica'){ if(nfBox){ nfBox.style.display=''; popolaFiltriNum(); } }
+  if(catFiltro==='numismatica'){ if(nfBox){ nfBox.style.display=''; popolaFiltriNum(); } const vb=document.getElementById('nf-vista'); if(vb) vb.textContent = _vistaTab?'▦ Griglia':'▤ Tabella'; }
   else if(nfBox) nfBox.style.display = 'none';
   const q = (document.getElementById('q').value||'').toLowerCase().trim();
   const termini = q.split(/\s+/).filter(Boolean);
@@ -1197,6 +1235,11 @@ function renderCatalog(){
   else list.sort((a,b)=> String(a.rec.fields['Titolo']||'').localeCompare(String(b.rec.fields['Titolo']||''), 'it'));
   document.getElementById('count').textContent = `${list.length} ${list.length===1?'oggetto':'oggetti'}`;
   renderPastiglie();
+  if(_vistaTab && catFiltro==='numismatica'){
+    renderTabellaNum(list);   // vista tabellare: usa il proprio ordinamento per colonna
+    document.getElementById('catalog-empty').classList.toggle('hidden', list.length>0 || !loaded);
+    return;
+  }
   document.getElementById('catalog').innerHTML = list.map(x=>{
     const snip = termini.length ? snippetMatch(x.cat, x.rec, termini) : [];
     return cardHTML(x.cat, x.rec, snip);
