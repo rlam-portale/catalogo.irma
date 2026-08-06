@@ -312,7 +312,7 @@ table.tab-num th, table.tab-num td{ padding:8px 12px; font-size:13px; border-bot
 /* th: sticky (intestazione fissa) — la sticky fa anche da contesto per il resizer assoluto */
 table.tab-num th{ position:sticky; top:0; z-index:1; background:var(--sup-quieta); color:var(--ink-medio);
   font-weight:500; user-select:none; text-transform:none; letter-spacing:0; }
-table.tab-num th .th-lab{ cursor:pointer; }
+table.tab-num th .th-lab{ display:block; cursor:pointer; padding-right:8px; }
 table.tab-num th .th-lab:hover{ color:var(--accent-dark); }
 table.tab-num th.num{ text-align:right; }
 table.tab-num td.num{ text-align:right; font-family:var(--f-mono); }

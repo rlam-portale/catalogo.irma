@@ -1156,6 +1156,8 @@ function toggleVistaTab(){ _vistaTab = !_vistaTab; renderCatalog(); }
 function ordinaTab(k){ if(_tabSort.k===k) _tabSort.dir*=-1; else _tabSort={k, dir:1}; renderCatalog(); }
 function renderTabellaNum(list){
   const cont = document.getElementById('catalog'); cont.className = 'tabella-wrap';
+  const prev = cont.querySelector('.tab-scroll');           // conserva lo scorrimento tra un riordino e l'altro
+  const sl = prev ? prev.scrollLeft : 0, st = prev ? prev.scrollTop : 0;
   const col = TAB_NUM_COLS.find(c=>c.k===_tabSort.k) || TAB_NUM_COLS[0];
   list = list.slice().sort((a,b)=>{
     const va=col.get(a.rec), vb=col.get(b.rec);
@@ -1179,6 +1181,7 @@ function renderTabellaNum(list){
     return `<tr onclick="openDetail('numismatica','${o.id}')">${tds}</tr>`;
   }).join('');
   cont.innerHTML = `<div class="tab-scroll"><table class="tab-num"><colgroup>${cols}</colgroup><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  const now = cont.querySelector('.tab-scroll'); if(now){ now.scrollLeft = sl; now.scrollTop = st; }
   attachResizers();
 }
 /* Ridimensionamento colonne trascinando il bordo destro dell'intestazione. */
