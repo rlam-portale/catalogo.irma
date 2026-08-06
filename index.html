@@ -1132,17 +1132,26 @@ function clearTuttiFiltri(){
 let _vistaTab = false;
 let _tabSort = { k:'Codice', dir:1 };
 let _tabW = {};   // larghezze colonne personalizzate (px), per chiave
-const TAB_NUM_COLS = [
-  { k:'Codice', l:'Codice', w:90, sortNum:true, get:o=>Number(o.fields['Codice']||0), disp:o=>codeStr(catByKey('numismatica'), o.fields) },
-  { k:'Titolo', l:'Denominazione', w:240, get:o=>o.fields['Titolo']||'' },
-  { k:'Autorità emittente', l:'Autorità', w:160, get:o=>o.fields['Autorità emittente']||'' },
-  { k:'Anno o millesimo', l:'Anno', w:85, get:o=>o.fields['Anno o millesimo']||'' },
-  { k:'Metallo o lega', l:'Metallo', w:110, get:o=>o.fields['Metallo o lega']||'' },
-  { k:'Stato di conservazione', l:'Cons.', w:75, get:o=>o.fields['Stato di conservazione']||'' },
-  { k:'Grado di rarità', l:'Rarità', w:75, get:o=>o.fields['Grado di rarità']||'' },
-  { k:'Grado Sheldon', l:'Sheldon', w:90, get:o=>o.fields['Grado Sheldon']||'' },
-  { k:'Valore stimato', l:'Valore', w:105, sortNum:true, right:true, cur:true, get:o=>Number(o.fields['Valore stimato']||0) }
-];
+/* Tutte le colonne della numismatica, generate da tutti i campi della scheda. */
+function buildTabCols(){
+  const cat = catByKey('numismatica');
+  const W = { num:85, cur:110, date:110, sel:120, area:220, text:150 };
+  const cols = [
+    { k:'Codice', l:'Codice', w:90, sortNum:true, get:o=>o.fields['Codice'], disp:o=>codeStr(cat, o.fields) },
+    { k:'Titolo', l:'Denominazione', w:220, get:o=>o.fields['Titolo'] }
+  ];
+  cat.campi.forEach(f=>{
+    if(f.k==='Titolo' || f.k==='Codice') return;
+    const t = f.t || 'text';
+    const col = { k:f.k, l:f.l, w:W[t]||150, get:o=>o.fields[f.k] };
+    if(t==='num' || t==='cur'){ col.sortNum=true; col.right=true; }
+    if(t==='cur') col.cur=true;
+    if(t==='date') col.date=true;
+    cols.push(col);
+  });
+  return cols;
+}
+const TAB_NUM_COLS = buildTabCols();
 function toggleVistaTab(){ _vistaTab = !_vistaTab; renderCatalog(); }
 function ordinaTab(k){ if(_tabSort.k===k) _tabSort.dir*=-1; else _tabSort={k, dir:1}; renderCatalog(); }
 function renderTabellaNum(list){
@@ -1150,7 +1159,8 @@ function renderTabellaNum(list){
   const col = TAB_NUM_COLS.find(c=>c.k===_tabSort.k) || TAB_NUM_COLS[0];
   list = list.slice().sort((a,b)=>{
     const va=col.get(a.rec), vb=col.get(b.rec);
-    const r = col.sortNum ? (va-vb) : String(va).localeCompare(String(vb),'it',{numeric:true});
+    const r = col.sortNum ? ((Number(va)||0)-(Number(vb)||0))
+                          : String(va==null?'':va).localeCompare(String(vb==null?'':vb),'it',{numeric:true});
     return r * _tabSort.dir;
   });
   const frecc = k => _tabSort.k===k ? (_tabSort.dir>0?' ▲':' ▼') : '';
@@ -1160,7 +1170,10 @@ function renderTabellaNum(list){
     const o = x.rec;
     const tds = TAB_NUM_COLS.map(c=>{
       const raw = c.disp ? c.disp(o) : c.get(o);
-      const txt = c.cur ? (raw ? fmtCur(raw) : '') : String(raw==null?'':raw);
+      let txt;
+      if(c.cur) txt = (raw!=null && raw!=='') ? fmtCur(raw) : '';
+      else if(c.date) txt = raw ? fmtDate(raw) : '';
+      else txt = String(raw==null?'':raw);
       return `<td class="${c.right?'num':''}" title="${escAttr(txt)}">${esc(txt)}</td>`;
     }).join('');
     return `<tr onclick="openDetail('numismatica','${o.id}')">${tds}</tr>`;
