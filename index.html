@@ -2612,6 +2612,7 @@ function mediaSection(cat, o){
   const docs = f['Documenti'] || [];
   const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
   const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
+    + (cat.key==='numismatica' ? `<button class="edit" title="Modifica: ruota / ritaglia" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>` : '')
     + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
   const gallery = fotos.map(ph).join('')
     + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
@@ -2891,38 +2892,79 @@ async function apriRitaglioQuadrato(catKey, id){
   pickFiles('image/*', async files=>{
     const file=files[0]; if(!file) return;
     let work; try{ work=await fileToCanvas(file, 2200); }catch(e){ toast('Immagine non leggibile'); return; }
-    const maxW=Math.min(window.innerWidth-32, 900), maxH=window.innerHeight*0.66;
-    const scale=Math.min(maxW/work.width, maxH/work.height, 1);
-    const cw=Math.round(work.width*scale), ch=Math.round(work.height*scale);
-    const side=Math.round(Math.min(cw,ch)*0.82);
-    _crop={ work, scale, cw, ch, cx:cw/2, cy:ch/2, side, drag:null, start:null, catKey, id, name:file.name };
-    const ov=document.createElement('div'); ov.id='crop-ov';
-    ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
-    ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:600px">Centra la moneta nel <b>riquadro quadrato</b>: trascina per spostarlo, usa gli <b>angoli</b> per ridimensionarlo.</div>
-      <canvas id="crop-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:66vh; touch-action:none; background:#000; border-radius:6px; cursor:move"></canvas>
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
-        <button class="btn secondary" onclick="chiudiRitaglio()">Annulla</button>
-        <button class="btn" id="crop-ok" onclick="confermaRitaglio()">◻ Ritaglia e carica</button>
-      </div>`;
-    document.body.appendChild(ov);
-    const cv=document.getElementById('crop-cv');
-    const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [ (t.clientX-r.left)*(cv.width/r.width), (t.clientY-r.top)*(cv.height/r.height) ]; };
-    const hit=(x,y)=>{ const {cx,cy,side}=_crop, h=side/2, hs=15;
-      const corners={nw:[cx-h,cy-h],ne:[cx+h,cy-h],sw:[cx-h,cy+h],se:[cx+h,cy+h]};
-      for(const k in corners){ const [px,py]=corners[k]; if((px-x)**2+(py-y)**2<hs*hs) return k; }
-      return (x>cx-h && x<cx+h && y>cy-h && y<cy+h) ? 'move' : null;
-    };
-    const down=e=>{ e.preventDefault(); const [x,y]=pos(e); const w=hit(x,y); if(w){ _crop.drag=w; _crop.start=[x,y,_crop.cx,_crop.cy,_crop.side]; } };
-    const move=e=>{ if(!_crop || !_crop.drag) return; e.preventDefault(); const [x,y]=pos(e);
-      if(_crop.drag==='move'){ _crop.cx=_crop.start[2]+(x-_crop.start[0]); _crop.cy=_crop.start[3]+(y-_crop.start[1]); }
-      else { const d=Math.max(Math.abs(x-_crop.cx), Math.abs(y-_crop.cy)); _crop.side=Math.max(30, d*2); }
-      clampCrop(); drawCrop();
-    };
-    const up=()=>{ if(_crop) _crop.drag=null; };
-    cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
-    cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
-    drawCrop();
+    _apriEditorRitaglio(work, { catKey, id, name:file.name });
   });
+}
+/* Riprende una foto GIÀ caricata per ruotarla/ritagliarla di nuovo; al salvataggio sostituisce l'originale. */
+async function apriModificaFoto(catKey, id, attId){
+  const cat=catByKey(catKey), o=objById(catKey, id); if(!o) return;
+  const att=(o.fields[cat.foto]||[]).find(a=>a.id===attId);
+  if(!att){ toast('Immagine non trovata'); return; }
+  toast('Carico l\'immagine…');
+  let work; try{ work=await urlToCanvas(att.url, 2200); }catch(e){ toast('Immagine non caricabile per la modifica'); return; }
+  _apriEditorRitaglio(work, { catKey, id, name:att.filename||'moneta', replaceAttId:attId });
+}
+/* Carica un'immagine remota in un canvas senza "tainting" (via proxy con header CORS). */
+function urlToCanvas(url, maxSide){
+  return new Promise((res, rej)=>{
+    const prox='https://images.weserv.nl/?url='+encodeURIComponent(url)+'&w='+(maxSide||1600)+'&output=jpg';
+    const img=new Image(); img.crossOrigin='anonymous';
+    img.onload=()=>{ const s=Math.min(1, (maxSide||1600)/Math.max(img.naturalWidth,img.naturalHeight));
+      const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.naturalWidth*s)); cv.height=Math.max(1,Math.round(img.naturalHeight*s));
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height); res(cv); };
+    img.onerror=()=>rej(new Error('immagine non caricabile')); img.src=prox;
+  });
+}
+/* Editor comune (ritaglio quadrato + rotazione), usato sia per foto nuove sia per la modifica di foto esistenti. */
+function _apriEditorRitaglio(work, meta){
+  const maxW=Math.min(window.innerWidth-32, 900), maxH=window.innerHeight*0.60;
+  const scale=Math.min(maxW/work.width, maxH/work.height, 1);
+  const cw=Math.round(work.width*scale), ch=Math.round(work.height*scale);
+  const side=Math.round(Math.min(cw,ch)*0.85);
+  _crop={ work, scale, cw, ch, cx:cw/2, cy:ch/2, side, drag:null, start:null, catKey:meta.catKey, id:meta.id, name:meta.name, replaceAttId:meta.replaceAttId||null };
+  const ov=document.createElement('div'); ov.id='crop-ov';
+  ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
+  ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:600px">${meta.replaceAttId?'Modifica l\'immagine: ':''}centra la moneta nel <b>riquadro quadrato</b> (trascina per spostarlo, <b>angoli</b> per ridimensionarlo) e usa <b>⟲ ⟳</b> per ruotarla.</div>
+    <canvas id="crop-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:60vh; touch-action:none; background:#000; border-radius:6px; cursor:move"></canvas>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center">
+      <button class="btn secondary" onclick="ruotaRitaglio(-1)" title="Ruota a sinistra">⟲</button>
+      <button class="btn secondary" onclick="ruotaRitaglio(1)" title="Ruota a destra">⟳</button>
+      <button class="btn secondary" onclick="chiudiRitaglio()">Annulla</button>
+      <button class="btn" id="crop-ok" onclick="confermaRitaglio()">${meta.replaceAttId?'✏️ Salva modifiche':'◻ Ritaglia e carica'}</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const cv=document.getElementById('crop-cv');
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [ (t.clientX-r.left)*(cv.width/r.width), (t.clientY-r.top)*(cv.height/r.height) ]; };
+  const hit=(x,y)=>{ const {cx,cy,side}=_crop, h=side/2, hs=15;
+    const corners={nw:[cx-h,cy-h],ne:[cx+h,cy-h],sw:[cx-h,cy+h],se:[cx+h,cy+h]};
+    for(const k in corners){ const [px,py]=corners[k]; if((px-x)**2+(py-y)**2<hs*hs) return k; }
+    return (x>cx-h && x<cx+h && y>cy-h && y<cy+h) ? 'move' : null;
+  };
+  const down=e=>{ e.preventDefault(); const [x,y]=pos(e); const w=hit(x,y); if(w){ _crop.drag=w; _crop.start=[x,y,_crop.cx,_crop.cy,_crop.side]; } };
+  const move=e=>{ if(!_crop || !_crop.drag) return; e.preventDefault(); const [x,y]=pos(e);
+    if(_crop.drag==='move'){ _crop.cx=_crop.start[2]+(x-_crop.start[0]); _crop.cy=_crop.start[3]+(y-_crop.start[1]); }
+    else { const d=Math.max(Math.abs(x-_crop.cx), Math.abs(y-_crop.cy)); _crop.side=Math.max(30, d*2); }
+    clampCrop(); drawCrop();
+  };
+  const up=()=>{ if(_crop) _crop.drag=null; };
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
+  drawCrop();
+}
+/* Ruota di 90° l'immagine di lavoro (dir: 1 = orario, -1 = antiorario) e ricalcola la vista. */
+function ruotaRitaglio(dir){
+  const c=_crop; if(!c) return;
+  const src=c.work, rc=document.createElement('canvas'); rc.width=src.height; rc.height=src.width;
+  const ctx=rc.getContext('2d');
+  if(dir>0){ ctx.translate(rc.width,0); ctx.rotate(Math.PI/2); } else { ctx.translate(0,rc.height); ctx.rotate(-Math.PI/2); }
+  ctx.drawImage(src,0,0);
+  c.work=rc;
+  const maxW=Math.min(window.innerWidth-32, 900), maxH=window.innerHeight*0.60;
+  c.scale=Math.min(maxW/rc.width, maxH/rc.height, 1);
+  c.cw=Math.round(rc.width*c.scale); c.ch=Math.round(rc.height*c.scale);
+  c.cx=c.cw/2; c.cy=c.ch/2; c.side=Math.round(Math.min(c.cw,c.ch)*0.85);
+  const cv=document.getElementById('crop-cv'); if(cv){ cv.width=c.cw; cv.height=c.ch; }
+  clampCrop(); drawCrop();
 }
 function clampCrop(){ const c=_crop; if(!c) return; c.side=Math.min(c.side, c.cw, c.ch); const h=c.side/2;
   c.cx=Math.max(h, Math.min(c.cw-h, c.cx)); c.cy=Math.max(h, Math.min(c.ch-h, c.cy)); }
@@ -2937,16 +2979,24 @@ function drawCrop(){ const c=_crop; if(!c) return; const cv=document.getElementB
 function chiudiRitaglio(){ const ov=document.getElementById('crop-ov'); if(ov) ov.remove(); _crop=null; }
 async function confermaRitaglio(){
   if(!_crop) return;
-  const {work,scale,cx,cy,side,catKey,id,name}=_crop;
+  const {work,scale,cx,cy,side,catKey,id,name,replaceAttId}=_crop;
+  const cat=catByKey(catKey);
   const s=1/scale, wx=(cx-side/2)*s, wy=(cy-side/2)*s, wSide=side*s;
   const outSize=Math.min(1600, Math.round(wSide));
   const out=document.createElement('canvas'); out.width=outSize; out.height=outSize;
   out.getContext('2d').drawImage(work, wx, wy, wSide, wSide, 0, 0, outSize, outSize);
-  const btn=document.getElementById('crop-ok'); if(btn){ btn.disabled=true; btn.textContent='Ritaglio…'; }
+  const etichetta = replaceAttId?'✏️ Salva modifiche':'◻ Ritaglia e carica';
+  const btn=document.getElementById('crop-ok'); if(btn){ btn.disabled=true; btn.textContent=replaceAttId?'Salvo…':'Ritaglio…'; }
   try{
-    await uploadScan(id, out, (name||'moneta').replace(/\.[^.]+$/,'')+'-ritaglio', catByKey(catKey).foto);
-    chiudiRitaglio(); await refreshDetail(catKey, id); toast('◻ Ritaglio quadrato caricato');
-  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent='◻ Ritaglia e carica'; } }
+    await uploadScan(id, out, (name||'moneta').replace(/\.[^.]+$/,'')+'-ritaglio', cat.foto);
+    if(replaceAttId){   // modifica di una foto esistente: rimuovi l'originale, tieni la versione ritagliata
+      await ricaricaRecord(catKey, id);
+      const o=objById(catKey, id);
+      const rest=(o.fields[cat.foto]||[]).filter(a=>a.id!==replaceAttId).map(a=>({id:a.id}));
+      const j=await updateRec(cat.tbl, id, {[cat.foto]:rest}); patchRec(catKey, id, j);
+    }
+    chiudiRitaglio(); await refreshDetail(catKey, id); toast(replaceAttId?'✏️ Immagine aggiornata':'◻ Ritaglio quadrato caricato');
+  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent=etichetta; } }
 }
 
 /* ================== ISBN LOOKUP + ARRICCHIMENTO WEB ================== */
