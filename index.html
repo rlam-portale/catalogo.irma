@@ -1128,19 +1128,20 @@ function clearTuttiFiltri(){
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   renderCatalog();
 }
-/* ===== Vista tabellare (numismatica): righe senza immagini, colonne ordinabili ===== */
+/* ===== Vista tabellare (numismatica): righe senza immagini, colonne ordinabili e ridimensionabili ===== */
 let _vistaTab = false;
 let _tabSort = { k:'Codice', dir:1 };
+let _tabW = {};   // larghezze colonne personalizzate (px), per chiave
 const TAB_NUM_COLS = [
-  { k:'Codice', l:'Codice', sortNum:true, get:o=>Number(o.fields['Codice']||0), disp:o=>codeStr(catByKey('numismatica'), o.fields) },
-  { k:'Titolo', l:'Denominazione', get:o=>o.fields['Titolo']||'' },
-  { k:'Autorità emittente', l:'Autorità', get:o=>o.fields['Autorità emittente']||'' },
-  { k:'Anno o millesimo', l:'Anno', get:o=>o.fields['Anno o millesimo']||'' },
-  { k:'Metallo o lega', l:'Metallo', get:o=>o.fields['Metallo o lega']||'' },
-  { k:'Stato di conservazione', l:'Cons.', get:o=>o.fields['Stato di conservazione']||'' },
-  { k:'Grado di rarità', l:'Rarità', get:o=>o.fields['Grado di rarità']||'' },
-  { k:'Grado Sheldon', l:'Sheldon', get:o=>o.fields['Grado Sheldon']||'' },
-  { k:'Valore stimato', l:'Valore', sortNum:true, right:true, cur:true, get:o=>Number(o.fields['Valore stimato']||0) }
+  { k:'Codice', l:'Codice', w:90, sortNum:true, get:o=>Number(o.fields['Codice']||0), disp:o=>codeStr(catByKey('numismatica'), o.fields) },
+  { k:'Titolo', l:'Denominazione', w:240, get:o=>o.fields['Titolo']||'' },
+  { k:'Autorità emittente', l:'Autorità', w:160, get:o=>o.fields['Autorità emittente']||'' },
+  { k:'Anno o millesimo', l:'Anno', w:85, get:o=>o.fields['Anno o millesimo']||'' },
+  { k:'Metallo o lega', l:'Metallo', w:110, get:o=>o.fields['Metallo o lega']||'' },
+  { k:'Stato di conservazione', l:'Cons.', w:75, get:o=>o.fields['Stato di conservazione']||'' },
+  { k:'Grado di rarità', l:'Rarità', w:75, get:o=>o.fields['Grado di rarità']||'' },
+  { k:'Grado Sheldon', l:'Sheldon', w:90, get:o=>o.fields['Grado Sheldon']||'' },
+  { k:'Valore stimato', l:'Valore', w:105, sortNum:true, right:true, cur:true, get:o=>Number(o.fields['Valore stimato']||0) }
 ];
 function toggleVistaTab(){ _vistaTab = !_vistaTab; renderCatalog(); }
 function ordinaTab(k){ if(_tabSort.k===k) _tabSort.dir*=-1; else _tabSort={k, dir:1}; renderCatalog(); }
@@ -1153,17 +1154,34 @@ function renderTabellaNum(list){
     return r * _tabSort.dir;
   });
   const frecc = k => _tabSort.k===k ? (_tabSort.dir>0?' ▲':' ▼') : '';
-  const head = TAB_NUM_COLS.map(c=>`<th onclick="ordinaTab('${c.k}')" class="${c.right?'num':''}">${esc(c.l)}${frecc(c.k)}</th>`).join('');
+  const cols = TAB_NUM_COLS.map(c=>`<col data-k="${c.k}" style="width:${_tabW[c.k]||c.w}px">`).join('');
+  const head = TAB_NUM_COLS.map(c=>`<th class="${c.right?'num':''}"><span class="th-lab" onclick="ordinaTab('${c.k}')">${esc(c.l)}${frecc(c.k)}</span><span class="col-resizer" data-k="${c.k}"></span></th>`).join('');
   const rows = list.map(x=>{
     const o = x.rec;
     const tds = TAB_NUM_COLS.map(c=>{
       const raw = c.disp ? c.disp(o) : c.get(o);
       const txt = c.cur ? (raw ? fmtCur(raw) : '') : String(raw==null?'':raw);
-      return `<td class="${c.right?'num':''}">${esc(txt)}</td>`;
+      return `<td class="${c.right?'num':''}" title="${escAttr(txt)}">${esc(txt)}</td>`;
     }).join('');
     return `<tr onclick="openDetail('numismatica','${o.id}')">${tds}</tr>`;
   }).join('');
-  cont.innerHTML = `<div class="tab-scroll"><table class="tab-num"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  cont.innerHTML = `<div class="tab-scroll"><table class="tab-num"><colgroup>${cols}</colgroup><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  attachResizers();
+}
+/* Ridimensionamento colonne trascinando il bordo destro dell'intestazione. */
+function attachResizers(){
+  const cont = document.getElementById('catalog');
+  cont.querySelectorAll('.col-resizer').forEach(rz=>{
+    rz.addEventListener('pointerdown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      const k = rz.dataset.k, colEl = cont.querySelector('col[data-k="'+k+'"]');
+      const startX = e.clientX, startW = colEl.getBoundingClientRect().width;
+      rz.classList.add('attivo');
+      const move = ev=>{ const w = Math.max(48, Math.round(startW + (ev.clientX - startX))); _tabW[k] = w; colEl.style.width = w+'px'; };
+      const up = ()=>{ rz.classList.remove('attivo'); document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up); };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+    });
+  });
 }
 function renderCatalog(){
   const toolbar = document.querySelector('#view-catalogo .toolbar');

@@ -303,15 +303,23 @@ th,td{ border-bottom:1px solid var(--filo-chiaro); }
 .val-grid{ align-items:start; }
 .val-grid .field label{ min-height:2.6em; display:flex; align-items:flex-end; }
 
-/* ===== Vista tabellare (numismatica) ===== */
-.tab-scroll{ overflow-x:auto; }
-table.tab-num{ width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
-table.tab-num th, table.tab-num td{ padding:8px 12px; font-size:13px; border-bottom:1px solid var(--filo-chiaro); text-align:left; white-space:nowrap; }
-table.tab-num th{ position:sticky; top:0; background:var(--sup-quieta); color:var(--ink-medio); font-weight:500; cursor:pointer; user-select:none; text-transform:none; letter-spacing:0; }
-table.tab-num th:hover{ color:var(--accent-dark); }
-table.tab-num th.num, table.tab-num td.num{ text-align:right; }
-table.tab-num td.num{ font-family:var(--f-mono); }
+/* ===== Vista tabellare (numismatica): scorre internamente, colonne ridimensionabili ===== */
+.tab-scroll{ max-height:calc(100vh - 300px); min-height:240px; overflow:auto;
+  border:1px solid var(--line); border-radius:var(--radius); background:var(--card); }
+table.tab-num{ table-layout:fixed; min-width:100%; border-collapse:collapse; background:var(--card); }
+table.tab-num th, table.tab-num td{ padding:8px 12px; font-size:13px; border-bottom:1px solid var(--filo-chiaro);
+  text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* th: sticky (intestazione fissa) — la sticky fa anche da contesto per il resizer assoluto */
+table.tab-num th{ position:sticky; top:0; z-index:1; background:var(--sup-quieta); color:var(--ink-medio);
+  font-weight:500; user-select:none; text-transform:none; letter-spacing:0; }
+table.tab-num th .th-lab{ cursor:pointer; }
+table.tab-num th .th-lab:hover{ color:var(--accent-dark); }
+table.tab-num th.num{ text-align:right; }
+table.tab-num td.num{ text-align:right; font-family:var(--f-mono); }
 table.tab-num tbody tr{ cursor:pointer; }
 table.tab-num tbody tr:hover{ background:var(--acc-velo); }
 table.tab-num tbody tr:last-child td{ border-bottom:0; }
 table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio); }
+/* maniglia di ridimensionamento sul bordo destro dell'intestazione */
+.col-resizer{ position:absolute; top:0; right:0; width:7px; height:100%; cursor:col-resize; }
+.col-resizer:hover, .col-resizer.attivo{ background:var(--accent); opacity:.45; }
