@@ -1528,6 +1528,7 @@ function openObjDetail(catKey, id){
 
 /* ================== CATALOGAZIONE ASSISTITA DALL'AI ================== */
 let _aiRes = null;
+let _aiBusy = false;   // analisi AI in corso: non chiudere la finestra con un clic fuori
 function _imgUrlRecord(cat, f){ const a=(f[cat.foto]||[])[0]; return a ? ((a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url) : ''; }
 /* tutte le foto della scheda (fino a 4) per l'analisi AI: dritto, rovescio, dettagli */
 function _imgUrlsRecord(cat, f){ return (f[cat.foto]||[]).slice(0,4).map(a=>(a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url).filter(Boolean); }
@@ -1571,6 +1572,7 @@ async function avviaAi(catKey, id){
   const out = document.getElementById('ai-out');
   const btn = document.getElementById('ai-go'); if(btn){ btn.disabled=true; btn.textContent='⏳ Analisi in corso… (può richiedere qualche minuto)'; }
   if(out) out.innerHTML = '<p class="note">🌐 Osservo l\'immagine e cerco sul web…</p>';
+  _aiBusy = true;
   try{
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
       body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, imageUrls, campi, currentFields:curr, autore }) });
@@ -1588,7 +1590,7 @@ async function avviaAi(catKey, id){
     _aiRes = { catKey, id, ...(j.result||{}) };
     renderAiPreview();
   }catch(e){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc(e.message)+'</p>'; }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='🔁 Rianalizza'; } }
+  finally{ _aiBusy = false; if(btn){ btn.disabled=false; btn.textContent='🔁 Rianalizza'; } }
 }
 function renderAiPreview(){
   const out = document.getElementById('ai-out'); if(!out || !_aiRes) return;
@@ -3905,7 +3907,9 @@ function fixAR(img){ const w=img.naturalWidth, h=img.naturalHeight; if(w && h) i
 function cssId(name){ return 'x'+String(name).replace(/[^a-zA-Z0-9]/g,'_'); }
 function escAttr(s){ return esc(s); }
 function fmtDate(d){ if(!d) return '—'; const [y,m,g]=d.split('-'); return `${g}/${m}/${y}`; }
-function modal(html, wide){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal${wide?' wide':''}">${html}</div></div>`; }
+function modal(html, wide){ document.getElementById('modal-root').innerHTML = `<div class="overlay" onclick="if(event.target===this)closeModalDaSfondo()"><div class="modal${wide?' wide':''}">${html}</div></div>`; }
+/* chiusura da clic sullo sfondo: bloccata mentre l'analisi AI è in corso, per non interromperla */
+function closeModalDaSfondo(){ if(_aiBusy){ toast('⏳ Analisi AI in corso — attendi il risultato'); return; } closeModal(); }
 function closeModal(){ document.getElementById('modal-root').innerHTML=''; _pendingCover=null; _ofCat=null; _ofId=null; _ofWasNew=false; clearTimeout(_autosaveTimer); _autosaveBusy=false; _autosavePending=false; }
 let toastTimer;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3500); }
