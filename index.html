@@ -2612,7 +2612,7 @@ function mediaSection(cat, o){
   const docs = f['Documenti'] || [];
   const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
   const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
-    + (cat.key==='numismatica' ? `<button class="edit" title="Modifica: ruota / ritaglia" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>` : '')
+    + (['numismatica','quadri'].includes(cat.key) ? `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>` : '')
     + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
   const gallery = fotos.map(ph).join('')
     + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
@@ -2955,7 +2955,7 @@ function _apriEditorRitaglio(work, meta){
   _crop={ work, src:work, angle:0, scale, cw, ch, cx:cw/2, cy:ch/2, side, drag:null, start:null, catKey:meta.catKey, id:meta.id, name:meta.name, replaceAttId:meta.replaceAttId||null };
   const ov=document.createElement('div'); ov.id='crop-ov';
   ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
-  ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:620px">${meta.replaceAttId?'Modifica l\'immagine: ':''}centra la moneta nel <b>riquadro quadrato</b> (trascina per spostarlo, <b>angoli</b> per ridimensionarlo), <b>⟲ ⟳</b> per ruotare di 90° e il <b>cursore</b> per raddrizzare.</div>
+  ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:620px">${meta.replaceAttId?'Modifica l\'immagine: ':''}centra il soggetto nel <b>riquadro quadrato</b> (trascina per spostarlo, <b>angoli</b> per ridimensionarlo), <b>⟲ ⟳</b> per ruotare di 90° e il <b>cursore</b> per raddrizzare.</div>
     <canvas id="crop-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:58vh; touch-action:none; background:#000; border-radius:6px; cursor:move"></canvas>
     <div style="display:flex; align-items:center; gap:10px; color:#fff; font-size:13px; width:min(100%,440px)">
       <span>Raddrizza</span>
