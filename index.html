@@ -2829,29 +2829,33 @@ async function apriRaddrizza(catKey, id){
   pickFiles('image/*', async files=>{
     const file = files[0]; if(!file) return;
     let work; try{ work = await fileToCanvas(file, 2200); }catch(e){ toast('Immagine non leggibile'); return; }
-    const maxW = Math.min(window.innerWidth-32, 1000), maxH = window.innerHeight*0.68;
-    const scale = Math.min(maxW/work.width, maxH/work.height, 1);
-    const cw = Math.round(work.width*scale), ch = Math.round(work.height*scale), ins=0.08;
-    _warp = { work, scale, cw, ch, catKey, id, name:file.name, drag:-1,
-      pts:[[cw*ins,ch*ins],[cw*(1-ins),ch*ins],[cw*(1-ins),ch*(1-ins)],[cw*ins,ch*(1-ins)]] };
-    const ov=document.createElement('div'); ov.id='warp-ov';
-    ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
-    ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:600px">Trascina i <b>4 angoli</b> sui vertici del quadro (o della cornice), poi raddrizza.</div>
-      <canvas id="warp-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:68vh; touch-action:none; background:#000; border-radius:6px; cursor:crosshair"></canvas>
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
-        <button class="btn secondary" onclick="chiudiRaddrizza()">Annulla</button>
-        <button class="btn" id="warp-ok" onclick="confermaRaddrizza()">📐 Raddrizza e carica</button>
-      </div>`;
-    document.body.appendChild(ov);
-    const cv=document.getElementById('warp-cv');
-    const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [ (t.clientX-r.left)*(cv.width/r.width), (t.clientY-r.top)*(cv.height/r.height) ]; };
-    const down=e=>{ e.preventDefault(); const [x,y]=pos(e); let best=-1,bd=28*28; _warp.pts.forEach((p,i)=>{ const dd=(p[0]-x)**2+(p[1]-y)**2; if(dd<bd){bd=dd;best=i;} }); _warp.drag=best; if(best<0){/*niente*/} };
-    const move=e=>{ if(_warp.drag<0) return; e.preventDefault(); const [x,y]=pos(e); _warp.pts[_warp.drag]=[Math.max(0,Math.min(cw,x)), Math.max(0,Math.min(ch,y))]; drawWarp(); };
-    const up=()=>{ if(_warp) _warp.drag=-1; };
-    cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
-    cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
-    drawWarp();
+    _apriEditorRaddrizza(work, { catKey, id, name:file.name });
   });
+}
+/* Editor prospettico (4 angoli), usato per foto nuove e per la modifica di foto esistenti. */
+function _apriEditorRaddrizza(work, meta){
+  const maxW = Math.min(window.innerWidth-32, 1000), maxH = window.innerHeight*0.68;
+  const scale = Math.min(maxW/work.width, maxH/work.height, 1);
+  const cw = Math.round(work.width*scale), ch = Math.round(work.height*scale), ins=0.08;
+  _warp = { work, scale, cw, ch, catKey:meta.catKey, id:meta.id, name:meta.name, replaceAttId:meta.replaceAttId||null, drag:-1,
+    pts:[[cw*ins,ch*ins],[cw*(1-ins),ch*ins],[cw*(1-ins),ch*(1-ins)],[cw*ins,ch*(1-ins)]] };
+  const ov=document.createElement('div'); ov.id='warp-ov';
+  ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.93); z-index:400; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:16px';
+  ov.innerHTML=`<div style="color:#fff; font-size:14px; text-align:center; max-width:600px">Trascina i <b>4 angoli</b> sui vertici del pezzo (o della cornice/bordo), poi raddrizza.</div>
+    <canvas id="warp-cv" width="${cw}" height="${ch}" style="max-width:100%; max-height:68vh; touch-action:none; background:#000; border-radius:6px; cursor:crosshair"></canvas>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
+      <button class="btn secondary" onclick="chiudiRaddrizza()">Annulla</button>
+      <button class="btn" id="warp-ok" onclick="confermaRaddrizza()">${meta.replaceAttId?'📐 Salva raddrizzata':'📐 Raddrizza e carica'}</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const cv=document.getElementById('warp-cv');
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [ (t.clientX-r.left)*(cv.width/r.width), (t.clientY-r.top)*(cv.height/r.height) ]; };
+  const down=e=>{ e.preventDefault(); const [x,y]=pos(e); let best=-1,bd=28*28; _warp.pts.forEach((p,i)=>{ const dd=(p[0]-x)**2+(p[1]-y)**2; if(dd<bd){bd=dd;best=i;} }); _warp.drag=best; };
+  const move=e=>{ if(_warp.drag<0) return; e.preventDefault(); const [x,y]=pos(e); _warp.pts[_warp.drag]=[Math.max(0,Math.min(cw,x)), Math.max(0,Math.min(ch,y))]; drawWarp(); };
+  const up=()=>{ if(_warp) _warp.drag=-1; };
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
+  drawWarp();
 }
 function drawWarp(){
   if(!_warp) return;
@@ -2869,21 +2873,29 @@ function drawWarp(){
 function chiudiRaddrizza(){ const ov=document.getElementById('warp-ov'); if(ov) ov.remove(); _warp=null; }
 async function confermaRaddrizza(){
   if(!_warp) return;
-  const {work,scale,pts,catKey,id,name}=_warp;
+  const {work,scale,pts,catKey,id,name,replaceAttId}=_warp;
+  const cat=catByKey(catKey);
   const quad = pts.map(p=>[p[0]/scale, p[1]/scale]);   // display → coordinate reali del work
   const dist=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1]);
   let outW=Math.round((dist(quad[0],quad[1])+dist(quad[3],quad[2]))/2);
   let outH=Math.round((dist(quad[0],quad[3])+dist(quad[1],quad[2]))/2);
   if(outW<10||outH<10){ toast('Angoli troppo vicini'); return; }
   const m=Math.max(outW,outH); if(m>2000){ const k=2000/m; outW=Math.round(outW*k); outH=Math.round(outH*k); }
+  const etichetta = replaceAttId?'📐 Salva raddrizzata':'📐 Raddrizza e carica';
   const btn=document.getElementById('warp-ok'); if(btn){ btn.disabled=true; btn.textContent='Raddrizzo…'; }
   try{
     const result = warpQuad(work, quad, outW, outH);
-    const upd = await uploadScan(id, result, (name||'foto').replace(/\.[^.]+$/,'')+'-raddrizzata', catByKey(catKey).foto);
-    void upd; chiudiRaddrizza();
+    await uploadScan(id, result, (name||'foto').replace(/\.[^.]+$/,'')+'-raddrizzata', cat.foto);
+    if(replaceAttId){   // modifica di una foto esistente: rimuovi l'originale
+      await ricaricaRecord(catKey, id);
+      const o=objById(catKey, id);
+      const rest=(o.fields[cat.foto]||[]).filter(a=>a.id!==replaceAttId).map(a=>({id:a.id}));
+      const j=await updateRec(cat.tbl, id, {[cat.foto]:rest}); patchRec(catKey, id, j);
+    }
+    chiudiRaddrizza();
     await refreshDetail(catKey, id);
-    toast('📐 Foto raddrizzata e caricata');
-  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent='📐 Raddrizza e carica'; } }
+    toast(replaceAttId?'📐 Immagine raddrizzata':'📐 Foto raddrizzata e caricata');
+  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent=etichetta; } }
 }
 
 /* ---- Ritaglio quadrato (monete: si caricano spesso foto rotonde da centrare) ---- */
@@ -2895,14 +2907,33 @@ async function apriRitaglioQuadrato(catKey, id){
     _apriEditorRitaglio(work, { catKey, id, name:file.name });
   });
 }
-/* Riprende una foto GIÀ caricata per ruotarla/ritagliarla di nuovo; al salvataggio sostituisce l'originale. */
+/* Riprende una foto GIÀ caricata: fa scegliere lo strumento (ritaglio quadrato o correzione prospettica),
+   poi apre l'editor sull'immagine esistente. Al salvataggio sostituisce l'originale. */
+let _modImg = null;
 async function apriModificaFoto(catKey, id, attId){
   const cat=catByKey(catKey), o=objById(catKey, id); if(!o) return;
   const att=(o.fields[cat.foto]||[]).find(a=>a.id===attId);
   if(!att){ toast('Immagine non trovata'); return; }
   toast('Carico l\'immagine…');
   let work; try{ work=await urlToCanvas(att.url, 2200); }catch(e){ toast('Immagine non caricabile per la modifica'); return; }
-  _apriEditorRitaglio(work, { catKey, id, name:att.filename||'moneta', replaceAttId:attId });
+  _modImg = { work, catKey, id, name:att.filename||'moneta', replaceAttId:attId };
+  const ov=document.createElement('div'); ov.id='mod-ov';
+  ov.style.cssText='position:fixed; inset:0; background:rgba(20,14,6,.7); z-index:410; display:flex; align-items:center; justify-content:center; padding:16px';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="background:var(--card); border-radius:14px; padding:22px; max-width:420px; width:100%; box-shadow:0 10px 40px rgba(0,0,0,.35)">
+    <h2 style="margin-bottom:6px">✏️ Modifica foto</h2>
+    <p class="note" style="margin-bottom:16px">Scegli come intervenire su questa immagine già caricata. Al salvataggio <b>sostituisce l'originale</b>.</p>
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <button class="btn" onclick="_modScegli('quad')">◻ Ritaglio quadrato · ruota / raddrizza</button>
+      <button class="btn secondary" onclick="_modScegli('prosp')">📐 Correggi la prospettiva (4 angoli)</button>
+      <button class="btn secondary" onclick="document.getElementById('mod-ov').remove()">Annulla</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+}
+function _modScegli(kind){
+  const m=_modImg; if(!m) return;
+  const ov=document.getElementById('mod-ov'); if(ov) ov.remove();
+  if(kind==='prosp') _apriEditorRaddrizza(m.work, m); else _apriEditorRitaglio(m.work, m);
 }
 /* Carica un'immagine remota in un canvas senza "tainting" (via proxy con header CORS). */
 function urlToCanvas(url, maxSide){
