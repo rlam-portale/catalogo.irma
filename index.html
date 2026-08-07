@@ -317,12 +317,14 @@
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <h2 style="margin:0">Archivio autori</h2>
       <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn secondary" id="au-merge-btn" onclick="toggleMergeAutori()" title="Unisci autori duplicati in uno solo">⛃ Unisci duplicati</button>
         <button class="btn secondary" onclick="collegaTutteOpere()" title="Collega le opere agli autori censiti per corrispondenza di nome">🔗 Collega opere per nome</button>
         <button class="btn" onclick="openAutoreForm(null)">➕ Nuovo autore</button>
       </div>
     </div>
     <p class="note" style="margin-bottom:14px">La biografia si scrive una volta qui e si collega alle opere (quadri, sculture, supporti musicali) dalla loro scheda.</p>
     <input type="search" id="q-autori" placeholder="Cerca autore per nome…" oninput="renderAutori()" style="max-width:360px; margin-bottom:14px">
+    <div id="autori-mergebar" style="display:none"></div>
     <div id="autori-list" class="grid"></div>
   </section>
 
@@ -759,11 +761,13 @@ function opereDiAutore(id){
   return out;
 }
 function nAutoreOpere(id){ return opereDiAutore(id).length; }
+let _mergeMode = false, _mergeSel = new Set();
 function renderAutori(){
   const wrap = document.getElementById('autori-list'); if(!wrap) return;
   const q = (document.getElementById('q-autori')||{}).value; const ql = (q||'').toLowerCase().trim();
   let list = autori.slice().sort((a,b)=> String(a.fields['Nome']||'').localeCompare(String(b.fields['Nome']||''),'it'));
   if(ql) list = list.filter(a=> String(a.fields['Nome']||'').toLowerCase().includes(ql) || String(a.fields['Biografia']||'').toLowerCase().includes(ql));
+  renderMergeBar();
   if(!list.length){ wrap.innerHTML = `<div class="empty">${autori.length? 'Nessun autore con questa ricerca.' : 'Nessun autore. Aggiungi il primo con «Nuovo autore».'}</div>`; return; }
   wrap.innerHTML = list.map(a=>{
     const f = a.fields;
@@ -772,14 +776,91 @@ function renderAutori(){
     const date = [f['Nascita'], f['Morte']].filter(Boolean).join(' – ');
     const bio = String(f['Biografia']||'').slice(0,140);
     const n = nAutoreOpere(a.id);
-    return `<div class="book" onclick="openAutoreDetail('${a.id}')">
-      <div class="cover" style="aspect-ratio:1">${img?`<img src="${esc(img)}" loading="lazy" onerror="this.remove()">`:`<div class="noimg">${esc(f['Nome']||'')}</div>`}<span class="catbadge">👤 Autore</span></div>
+    const sel = _mergeSel.has(a.id);
+    const click = _mergeMode ? `toggleMergeSel('${a.id}')` : `openAutoreDetail('${a.id}')`;
+    const ring = sel ? ' style="box-shadow:0 0 0 3px var(--accent); border-color:var(--accent)"' : '';
+    const check = _mergeMode ? `<span class="catbadge" style="left:auto; right:8px; background:${sel?'var(--accent)':'rgba(255,255,255,.92)'}; color:${sel?'#fff':'var(--accent-dark)'}">${sel?'✓ selezionato':'seleziona'}</span>` : '';
+    return `<div class="book" onclick="${click}"${ring}>
+      <div class="cover" style="aspect-ratio:1">${img?`<img src="${esc(img)}" loading="lazy" onerror="this.remove()">`:`<div class="noimg">${esc(f['Nome']||'')}</div>`}<span class="catbadge">👤 Autore</span>${check}</div>
       <div class="binfo"><div class="btitle">${esc(f['Nome']||'—')}</div><div class="bauthor">${esc(date)}${date&&f['Nazionalità']?' · ':''}${esc(f['Nazionalità']||'')}</div>
       ${bio?`<div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.3">${esc(bio)}${f['Biografia'].length>140?'…':''}</div>`:''}
       <div style="font-size:11px;color:var(--muted);margin-top:4px">${n} ${n===1?'opera':'opere'}</div></div>
     </div>`;
   }).join('');
 }
+/* ===== Unione autori duplicati ===== */
+function toggleMergeAutori(){
+  _mergeMode = !_mergeMode; _mergeSel = new Set();
+  const btn=document.getElementById('au-merge-btn'); if(btn) btn.textContent = _mergeMode?'✕ Esci da unione':'⛃ Unisci duplicati';
+  renderAutori();
+}
+function toggleMergeSel(id){ if(_mergeSel.has(id)) _mergeSel.delete(id); else _mergeSel.add(id); renderAutori(); }
+function renderMergeBar(){
+  const bar=document.getElementById('autori-mergebar'); if(!bar) return;
+  if(!_mergeMode){ bar.style.display='none'; bar.innerHTML=''; return; }
+  bar.style.display='';
+  bar.className='';
+  bar.style.cssText='display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 14px; margin-bottom:14px; background:var(--acc-velo); border:1px solid var(--accent); border-radius:10px';
+  bar.innerHTML = `<span style="font-size:13.5px; color:var(--accent-dark)"><b>Unione duplicati</b> — seleziona 2 o più schede dello stesso autore, poi unisci.</span>
+    <span style="margin-left:auto; font-size:13px; color:var(--ink-medio)">${_mergeSel.size} selezionati</span>
+    <button class="btn small" ${_mergeSel.size<2?'disabled':''} onclick="apriUnioneAutori()">⛃ Unisci selezionati</button>
+    <button class="btn secondary small" onclick="toggleMergeAutori()">Annulla</button>`;
+}
+/* Scelta dell'autore "principale" tra i selezionati, poi unione. */
+function apriUnioneAutori(){
+  const ids=[..._mergeSel]; if(ids.length<2) return;
+  const sel=ids.map(id=>autoreById(id)).filter(Boolean);
+  const opts=sel.map((a,i)=>{
+    const n=nAutoreOpere(a.id), bioLen=String(a.fields['Biografia']||'').length;
+    return `<label style="display:flex; gap:10px; align-items:flex-start; padding:10px; border:1px solid var(--line); border-radius:8px; cursor:pointer; margin-bottom:8px">
+      <input type="radio" name="merge-target" value="${a.id}" ${i===0?'checked':''} style="width:auto; margin-top:3px">
+      <span><b>${esc(a.fields['Nome']||'—')}</b> <span class="note">· ${n} opere · bio ${bioLen} car.</span><br>
+      <span class="note">${esc([a.fields['Nascita'],a.fields['Morte']].filter(Boolean).join(' – '))} ${esc(a.fields['Nazionalità']||'')}</span></span></label>`;
+  }).join('');
+  modal(`<h2>⛃ Unisci ${sel.length} autori</h2>
+    <p class="note" style="margin-bottom:12px">Scegli la scheda <b>da mantenere</b> (principale). Le altre verranno <b>eliminate</b>: tutte le opere collegate passeranno alla principale e i campi biografici mancanti verranno completati dalle altre.</p>
+    ${opts}
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn" onclick="confermaUnioneAutori()">⛃ Unisci</button>
+    </div>`);
+}
+async function confermaUnioneAutori(){
+  const targetId=(document.querySelector('input[name=merge-target]:checked')||{}).value;
+  if(!targetId) return;
+  const others=[..._mergeSel].filter(x=>x!==targetId);
+  if(!others.length){ toast('Seleziona almeno un duplicato oltre alla principale'); return; }
+  const otherSet=new Set(others);
+  const target=autoreById(targetId); const nomeTarget=target.fields['Nome']||'';
+  // 1) riporta le opere collegate ai duplicati sulla principale (+ uniforma il nome-testo)
+  const daAgg=[];
+  CAT.filter(c=>c.autore).forEach(c=> (objs[c.key]||[]).forEach(o=>{
+    if((o.fields[AUTORE_LINK]||[]).some(x=>otherSet.has(x))) daAgg.push({cat:c, rec:o});
+  }));
+  try{
+    toast(`Unisco: aggiorno ${daAgg.length} opere…`);
+    for(const {cat,rec} of daAgg){
+      const cur=rec.fields[AUTORE_LINK]||[];
+      const nuovo=Array.from(new Set(cur.filter(x=>!otherSet.has(x)).concat([targetId])));
+      const patch={[AUTORE_LINK]:nuovo}; if(nomeTarget) patch[cat.sub]=nomeTarget;
+      const j=await updateRec(cat.tbl, rec.id, patch); patchRec(cat.key, rec.id, j);
+    }
+    // 2) completa i campi biografici vuoti della principale dai duplicati
+    const patch={};
+    ['Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{
+      if(target.fields[k]) return;
+      for(const oid of others){ const a=autoreById(oid); if(a && a.fields[k]){ patch[k]=a.fields[k]; break; } }
+    });
+    if(Object.keys(patch).length){ const j=await updateRec(TBL.autori, targetId, patch); patchRec2Autore(targetId, j); }
+    // 3) elimina i duplicati
+    for(const oid of others){ try{ await deleteRec(TBL.autori, oid); }catch(e){} }
+    autori=autori.filter(a=>!otherSet.has(a.id));
+    _mergeSel=new Set(); _mergeMode=false;
+    const b=document.getElementById('au-merge-btn'); if(b) b.textContent='⛃ Unisci duplicati';
+    closeModal(); renderAutori(); toast(`⛃ Uniti ${others.length} duplicati in «${nomeTarget}»`);
+  }catch(e){ toast('Errore durante l\'unione: '+e.message); }
+}
+function patchRec2Autore(id, rec){ const i=autori.findIndex(a=>a.id===id); if(i>=0) autori[i]=rec; }
 /* Scheda autore: biografia + opere possedute collegate (cliccabili). */
 function openAutoreDetail(id){
   const a = autoreById(id); if(!a) return; const f = a.fields;
