@@ -155,8 +155,15 @@ ${formaJson}`;
     const m = text.match(/\{[\s\S]*\}/);
     if (m) { try { parsed = JSON.parse(m[0]); } catch (e) { /* sotto */ } }
     if (!parsed) return res.status(502).json({ error: { message: 'Risposta AI non interpretabile.' }, raw: text.slice(0, 2000) });
+    ripulisciCite(parsed);   // rimuove i marcatori di citazione della ricerca web (<cite …>…</cite>)
     res.status(200).json({ result: parsed });
   } catch (e) {
     res.status(502).json({ error: { message: 'AI irraggiungibile: ' + e.message } });
   }
+}
+/* Rimuove ricorsivamente i tag di citazione della ricerca web da tutte le stringhe del risultato. */
+function stripCite(s){ return String(s).replace(/<\/?cite\b[^>]*>/gi, '').replace(/[ \t]+([,.;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim(); }
+function ripulisciCite(v){
+  if (Array.isArray(v)) { v.forEach((x, i) => { if (typeof x === 'string') v[i] = stripCite(x); else ripulisciCite(x); }); }
+  else if (v && typeof v === 'object') { for (const k of Object.keys(v)) { if (typeof v[k] === 'string') v[k] = stripCite(v[k]); else ripulisciCite(v[k]); } }
 }

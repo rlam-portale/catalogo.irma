@@ -1688,6 +1688,8 @@ function openObjDetail(catKey, id){
 /* ================== CATALOGAZIONE ASSISTITA DALL'AI ================== */
 let _aiRes = null;
 let _aiBusy = false;   // analisi AI in corso: non chiudere la finestra con un clic fuori
+/* rimuove i marcatori di citazione della ricerca web (<cite index="…">…</cite>) dal testo */
+function pulisciCite(s){ return String(s==null?'':s).replace(/<\/?cite\b[^>]*>/gi,'').replace(/[ \t]+([,.;:])/g,'$1').replace(/[ \t]{2,}/g,' ').trim(); }
 function _imgUrlRecord(cat, f){ const a=(f[cat.foto]||[])[0]; return a ? ((a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url) : ''; }
 /* tutte le foto della scheda (fino a 4) per l'analisi AI: dritto, rovescio, dettagli */
 function _imgUrlsRecord(cat, f){ return (f[cat.foto]||[]).slice(0,4).map(a=>(a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url).filter(Boolean); }
@@ -1747,6 +1749,8 @@ async function avviaAi(catKey, id){
     }
     if(!r.ok){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc((j.error&&j.error.message)||'Errore')+'</p>'; return; }
     _aiRes = { catKey, id, ...(j.result||{}) };
+    ['opera','autore'].forEach(sec=>{ const ob=_aiRes[sec]; if(ob&&typeof ob==='object') Object.keys(ob).forEach(k=>{ if(typeof ob[k]==='string') ob[k]=pulisciCite(ob[k]); }); });
+    if(typeof _aiRes.riepilogo==='string') _aiRes.riepilogo=pulisciCite(_aiRes.riepilogo);
     renderAiPreview();
   }catch(e){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc(e.message)+'</p>'; }
   finally{ _aiBusy = false; if(btn){ btn.disabled=false; btn.textContent='🔁 Rianalizza'; } }
