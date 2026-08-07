@@ -316,7 +316,10 @@
   <section id="view-autori" class="hidden">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap">
       <h2 style="margin:0">Archivio autori</h2>
-      <button class="btn" onclick="openAutoreForm(null)">➕ Nuovo autore</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn secondary" onclick="collegaTutteOpere()" title="Collega le opere agli autori censiti per corrispondenza di nome">🔗 Collega opere per nome</button>
+        <button class="btn" onclick="openAutoreForm(null)">➕ Nuovo autore</button>
+      </div>
     </div>
     <p class="note" style="margin-bottom:14px">La biografia si scrive una volta qui e si collega alle opere (quadri, sculture, supporti musicali) dalla loro scheda.</p>
     <input type="search" id="q-autori" placeholder="Cerca autore per nome…" oninput="renderAutori()" style="max-width:360px; margin-bottom:14px">
@@ -742,10 +745,20 @@ async function testConnection(goCatalog){
 let addCat = 'libri';
 function renderAll(){ renderChips(); renderAddChips(); renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); renderAutori(); }
 function autoreById(id){ return autori.find(a=>a.id===id); }
-function nAutoreOpere(id){
-  let n=0; CAT.filter(c=>c.autore).forEach(c=> (objs[c.key]||[]).forEach(o=>{ if((o.fields[AUTORE_LINK]||[]).includes(id)) n++; }));
-  return n;
+/* Opere in catalogo di un autore: collegate esplicitamente (Autore archivio) o combacianti per nome. */
+function opereDiAutore(id){
+  const a = autoreById(id); const nome = a ? String(a.fields['Nome']||'').trim().toLowerCase() : '';
+  const out = [];
+  CAT.filter(c=>c.autore).forEach(c=>{
+    (objs[c.key]||[]).forEach(o=>{
+      const linked = (o.fields[AUTORE_LINK]||[]).includes(id);
+      const perNome = nome && String(o.fields[c.sub]||'').trim().toLowerCase()===nome;
+      if(linked || perNome) out.push({ cat:c, rec:o, linked });
+    });
+  });
+  return out;
 }
+function nAutoreOpere(id){ return opereDiAutore(id).length; }
 function renderAutori(){
   const wrap = document.getElementById('autori-list'); if(!wrap) return;
   const q = (document.getElementById('q-autori')||{}).value; const ql = (q||'').toLowerCase().trim();
@@ -759,13 +772,78 @@ function renderAutori(){
     const date = [f['Nascita'], f['Morte']].filter(Boolean).join(' – ');
     const bio = String(f['Biografia']||'').slice(0,140);
     const n = nAutoreOpere(a.id);
-    return `<div class="book" onclick="openAutoreForm('${a.id}')">
+    return `<div class="book" onclick="openAutoreDetail('${a.id}')">
       <div class="cover" style="aspect-ratio:1">${img?`<img src="${esc(img)}" loading="lazy" onerror="this.remove()">`:`<div class="noimg">${esc(f['Nome']||'')}</div>`}<span class="catbadge">👤 Autore</span></div>
       <div class="binfo"><div class="btitle">${esc(f['Nome']||'—')}</div><div class="bauthor">${esc(date)}${date&&f['Nazionalità']?' · ':''}${esc(f['Nazionalità']||'')}</div>
       ${bio?`<div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.3">${esc(bio)}${f['Biografia'].length>140?'…':''}</div>`:''}
       <div style="font-size:11px;color:var(--muted);margin-top:4px">${n} ${n===1?'opera':'opere'}</div></div>
     </div>`;
   }).join('');
+}
+/* Scheda autore: biografia + opere possedute collegate (cliccabili). */
+function openAutoreDetail(id){
+  const a = autoreById(id); if(!a) return; const f = a.fields;
+  const opere = opereDiAutore(id);
+  const foto = (f['Foto']||[])[0];
+  const img = foto ? ((foto.thumbnails&&foto.thumbnails.large&&foto.thumbnails.large.url)||foto.url) : '';
+  const date = [f['Nascita'], f['Morte']].filter(Boolean).join(' – ');
+  const daCollegare = opere.filter(o=>!o.linked).length;
+  const cards = opere.map(({cat,rec})=>{
+    const cov = coverSrc(cat, rec.fields);
+    return `<div class="book" onclick="closeModal(); openDetail('${cat.key}','${rec.id}')">
+      <div class="cover" style="aspect-ratio:1">${cov?`<img src="${esc(cov)}" loading="lazy" onerror="this.remove()">`:`<div class="noimg">${esc(rec.fields['Titolo']||'')}</div>`}<span class="code">${esc(codeStr(cat,rec.fields))}</span><span class="catbadge">${cat.icon} ${esc(cat.label.split(',')[0].split(' e ')[0])}</span></div>
+      <div class="binfo"><div class="btitle">${esc(rec.fields['Titolo']||'—')}</div></div></div>`;
+  }).join('');
+  modal(`
+    <div class="detail">
+      <div class="cover" style="width:min(170px,38vw); flex-shrink:0; border-radius:10px; overflow:hidden; aspect-ratio:1">${img?`<img src="${esc(img)}" onclick="lightbox('${esc(img)}')" style="cursor:zoom-in">`:`<div class="noimg">${esc(f['Nome']||'')}</div>`}</div>
+      <div class="meta">
+        <div class="note" style="margin-bottom:2px">👤 Autore</div>
+        <h2>${esc(f['Nome']||'')}</h2>
+        <div class="auth">${esc(date)}${date&&f['Nazionalità']?' · ':''}${esc(f['Nazionalità']||'')}</div>
+        ${f['Biografia']?`<p class="note" style="white-space:pre-wrap; text-align:justify; margin-top:10px">${esc(f['Biografia'])}</p>`:''}
+        ${f['Note']?`<p class="note" style="white-space:pre-wrap; margin-top:8px"><b>Note:</b> ${esc(f['Note'])}</p>`:''}
+      </div>
+    </div>
+    <div class="seclabel" style="margin-top:16px">Opere in catalogo (${opere.length})</div>
+    ${opere.length?`<div class="grid">${cards}</div>`:`<p class="note">Nessuna opera collegata. Apri la scheda di un'opera (quadro, scultura, disco) e scegli questo autore in «Autore in archivio».</p>`}
+    ${daCollegare?`<p class="note" style="margin-top:10px">${daCollegare} opera/e trovate <b>per nome</b> ma non ancora collegate stabilmente. <button class="btn small" onclick="collegaOpereAutore('${id}')">🔗 Collega ora</button></p>`:''}
+    <div class="modal-actions">
+      <button class="btn danger small left" onclick="deleteAutore('${id}')">Elimina</button>
+      <button class="btn secondary" onclick="openAutoreForm('${id}')">✏️ Modifica</button>
+      <button class="btn" onclick="closeModal()">Chiudi</button>
+    </div>`, true);
+}
+/* Collega stabilmente (imposta Autore archivio) le opere trovate per nome per UN autore. */
+async function collegaOpereAutore(id){
+  const daFare = opereDiAutore(id).filter(o=>!o.linked);
+  if(!daFare.length){ toast('Nessuna opera da collegare'); return; }
+  toast(`Collego ${daFare.length} opere…`);
+  for(const {cat,rec} of daFare){
+    const cur = rec.fields[AUTORE_LINK]||[];
+    try{ const j = await updateRec(cat.tbl, rec.id, {[AUTORE_LINK]: cur.concat([id])}); patchRec(cat.key, rec.id, j); }catch(e){}
+  }
+  renderAutori(); openAutoreDetail(id); toast('🔗 Opere collegate');
+}
+/* Collega in blocco tutte le opere del catalogo agli autori censiti, per corrispondenza di nome. */
+async function collegaTutteOpere(){
+  const perNome = {}; autori.forEach(a=>{ const n=String(a.fields['Nome']||'').trim().toLowerCase(); if(n) perNome[n]=a.id; });
+  const daFare = [];
+  CAT.filter(c=>c.autore).forEach(c=>{
+    (objs[c.key]||[]).forEach(o=>{
+      const nome = String(o.fields[c.sub]||'').trim().toLowerCase(); if(!nome) return;
+      const aid = perNome[nome]; if(!aid) return;
+      if(!(o.fields[AUTORE_LINK]||[]).includes(aid)) daFare.push({cat:c, rec:o, aid});
+    });
+  });
+  if(!daFare.length){ toast('Tutte le opere con autore censito sono già collegate'); return; }
+  if(!confirm(`Collegare ${daFare.length} opere agli autori censiti (per corrispondenza di nome)?`)) return;
+  toast(`Collego ${daFare.length} opere…`); let ok=0;
+  for(const {cat,rec,aid} of daFare){
+    const cur = rec.fields[AUTORE_LINK]||[];
+    try{ const j = await updateRec(cat.tbl, rec.id, {[AUTORE_LINK]: cur.concat([aid])}); patchRec(cat.key, rec.id, j); ok++; }catch(e){}
+  }
+  renderAutori(); toast(`🔗 Collegate ${ok}/${daFare.length} opere`);
 }
 function openAutoreForm(id){
   const a = id ? autoreById(id) : null; const f = a? a.fields : {};
