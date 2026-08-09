@@ -2298,16 +2298,20 @@ let _etUsed = new Set();   // posizioni già usate del foglio (modalità riuso)
 function apriEtichette(){
   _etUsed = new Set();
   const def=(catFiltro && catByKey(catFiltro))?catFiltro:CAT[0].key;
-  const opts=CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('');
+  const opts=CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('')
+    + '<option value="strumenti">🛠 Strumenti di lavoro EON</option>';
   const fmts=Object.keys(ETICHETTE).map(k=>`<option value="${k}">${esc(ETICHETTE[k].nome)}</option>`).join('');
   modal(`
     <h2>🏷 Stampa etichette di contrassegno</h2>
     <p class="note">Un'etichetta per pezzo, con il <b>codice inventario in verticale</b> sul lato destro e i dati di catalogazione. Scegli categoria, formato del foglio ed eventuale intervallo di codici.</p>
     <div class="frow">
-      <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="et-cat">${opts}</select></div>
+      <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="et-cat" onchange="onEtCatChange()">${opts}</select></div>
       <div class="field" style="grid-column:1/-1"><label>Formato foglio etichette</label><select id="et-fmt" onchange="_etUsed=new Set(); renderEtGrid()">${fmts}</select></div>
-      <div class="field"><label>Da codice n. (opzionale)</label><input id="et-from" type="number" min="1"></div>
-      <div class="field"><label>A codice n. (opzionale)</label><input id="et-to" type="number" min="1"></div>
+      <div id="et-range" style="grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr; gap:10px">
+        <div class="field"><label>Da codice n. (opzionale)</label><input id="et-from" type="number" min="1"></div>
+        <div class="field"><label>A codice n. (opzionale)</label><input id="et-to" type="number" min="1"></div>
+      </div>
+      <div class="field" id="et-eon-opt" style="grid-column:1/-1; display:none"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink)"><input type="checkbox" id="et-eon-presenti" checked style="width:auto"> Solo beni presenti in casa di Irma</label></div>
       <div class="field" style="grid-column:1/-1"><label style="color:var(--muted)">Regolazione posizione — se dopo una prova su carta le etichette risultano spostate rispetto al foglio</label></div>
       <div class="field"><label>Spostamento orizzontale → (mm)</label><input id="et-ox" type="number" step="0.5" value="0" placeholder="es. 1,5 verso destra"></div>
       <div class="field"><label>Spostamento verticale ↓ (mm)</label><input id="et-oy" type="number" step="0.5" value="0"></div>
@@ -2381,6 +2385,11 @@ function attachEtDrag(inner){
   inner.addEventListener('pointerup', fine);
   inner.addEventListener('pointercancel', fine);
 }
+function onEtCatChange(){
+  const eon = document.getElementById('et-cat').value==='strumenti';
+  const rng=document.getElementById('et-range'); if(rng) rng.style.display = eon?'none':'';
+  const opt=document.getElementById('et-eon-opt'); if(opt) opt.style.display = eon?'':'none';
+}
 function avviaEtichette(){
   const k=document.getElementById('et-cat').value;
   const from=Number(document.getElementById('et-from').value)||0;
@@ -2389,15 +2398,28 @@ function avviaEtichette(){
   const ox=Number(document.getElementById('et-ox').value)||0;
   const oy=Number(document.getElementById('et-oy').value)||0;
   const usate = (document.getElementById('et-riusa')||{}).checked ? Array.from(_etUsed) : [];
+  if(k==='strumenti'){ const soloP=(document.getElementById('et-eon-presenti')||{}).checked; closeModal(); stampaEtichette('strumenti', 0, 0, fmt, ox, oy, usate, soloP); return; }
   closeModal(); stampaEtichette(k, from, to, fmt, ox, oy, usate);
 }
-async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY, usate){
+async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY, usate, soloPresenti){
   offX=offX||0; offY=offY||0;
-  const cat=catByKey(catKey); const E=ETICHETTE[fmtKey]; if(!cat||!E) return;
-  let items=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields));
-  items=items.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN&&c<fromN)return false; if(toN&&c>toN)return false; return true; });
-  items.sort((a,b)=>(a.fields['Codice']||0)-(b.fields['Codice']||0));
-  if(!items.length){ toast('Nessun oggetto in questo intervallo'); return; }
+  const E=ETICHETTE[fmtKey]; if(!E) return;
+  const eon = catKey==='strumenti';
+  const cat = eon ? null : catByKey(catKey);
+  if(!eon && !cat) return;
+  let items, labelName;
+  if(eon){
+    items = strumenti.slice();
+    if(soloPresenti) items = items.filter(o=>(o.fields['Presente in casa Irma']||'')==='Sì');
+    items.sort((a,b)=>String(a.fields['Codice']||'').localeCompare(String(b.fields['Codice']||''),'it',{numeric:true}));
+    labelName = 'Strumenti EON'+(soloPresenti?' — in casa Irma':'');
+  } else {
+    items=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields));
+    items=items.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN&&c<fromN)return false; if(toN&&c>toN)return false; return true; });
+    items.sort((a,b)=>(a.fields['Codice']||0)-(b.fields['Codice']||0));
+    labelName = cat.label;
+  }
+  if(!items.length){ toast(eon?'Nessun bene EON da stampare':'Nessun oggetto in questo intervallo'); return; }
   try{ await loadScript(CDN.jspdf); }catch(e){ toast('Impossibile caricare il generatore PDF'); return; }
   const JS=(window.jspdf||{}).jsPDF; if(!JS){ toast('Generatore PDF non disponibile'); return; }
   const doc=new JS({unit:'mm',format:'a4'}); installPdfSafe(doc);
@@ -2418,7 +2440,7 @@ async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY, usate){
     while(curPage<s.page){ doc.addPage(); curPage++; }
     const p=s.pos, c=p%E.cols, r=Math.floor(p/E.cols);
     const x=E.mL + c*(E.lw+E.gX) + offX, y=E.mT + r*(E.lh+E.gY) + offY, w=E.lw, h=E.lh;
-    const f=o.fields, code=codeStr(cat,f), pad=1.6, inset=E.inset||0;   // inset: rientro dai bordi laterali (stampanti che tagliano il full-bleed)
+    const f=o.fields, code=eon?String(f['Codice']||''):codeStr(cat,f), pad=1.6, inset=E.inset||0;   // inset: rientro dai bordi laterali (stampanti che tagliano il full-bleed)
     doc.setDrawColor(212,206,196); doc.setLineWidth(0.15); doc.roundedRect(x+0.3, y+0.3, w-0.6, h-0.6, 1, 1, 'S');
     // codice inventario in verticale sul lato destro (evidente), rientrato di `inset`
     const stripW=big?8:6;
@@ -2429,27 +2451,39 @@ async function stampaEtichette(catKey, fromN, toN, fmtKey, offX, offY, usate){
     // area dati, anch'essa rientrata di `inset` a sinistra
     const mx=x+pad+inset, mw=w-stripW-pad-2*inset;
     let ty=y+pad+(big?2.4:2);
-    if(big){ doc.setFont('helvetica','bold'); doc.setFontSize(4.6); doc.setTextColor(111,74,39); doc.setCharSpace(0.3);
-      doc.text('COLLEZIONE DAJLANI', mx, ty); doc.setCharSpace(0); ty+=2.7; }
+    if(big){ doc.setFont('helvetica','bold'); doc.setFontSize(4.6);
+      if(eon){ doc.setTextColor(15,110,86); doc.setCharSpace(0.3); doc.text('EON S.R.L.', mx, ty); }
+      else { doc.setTextColor(111,74,39); doc.setCharSpace(0.3); doc.text('COLLEZIONE DAJLANI', mx, ty); }
+      doc.setCharSpace(0); ty+=2.7; }
     doc.setFont('helvetica','bold'); doc.setFontSize(big?7.2:5.8); doc.setTextColor(20,20,20);
-    doc.text(fit(f['Titolo']||'—', mw), mx, ty); ty+=(big?3.1:2.6);
-    if(f[cat.sub]){ doc.setFont('helvetica','italic'); doc.setFontSize(big?5.8:5); doc.setTextColor(95,88,78);
-      doc.text(fit(String(f[cat.sub]), mw), mx, ty); ty+=(big?2.9:2.4); }
+    doc.text(fit((eon?f['Descrizione']:f['Titolo'])||'—', mw), mx, ty); ty+=(big?3.1:2.6);
+    const subVal = eon ? f['Categoria'] : f[cat.sub];
+    if(subVal){ doc.setFont('helvetica','italic'); doc.setFontSize(big?5.8:5); doc.setTextColor(95,88,78);
+      doc.text(fit(String(subVal), mw), mx, ty); ty+=(big?2.9:2.4); }
     doc.setFont('helvetica','normal'); doc.setFontSize(big?5.4:4.6); doc.setTextColor(40,40,40);
-    for(const fld of cat.campi){
-      if(ty > y+h-pad) break;
-      if(fld.t==='area' || fld.k===cat.sub) continue;
-      const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
-      let disp=v;
-      if(fld.t==='date') disp=fmtDate(v); else if(fld.t==='cur') disp=fmtCur(v);
-      else if(fld.t==='num'&&/cm$/.test(fld.k)) disp=v+' cm'; else if(fld.t==='num'&&/kg$/.test(fld.k)) disp=v+' kg';
-      doc.text(fit(fld.l+': '+disp, mw), mx, ty); ty+=(big?2.5:2.2);
+    if(eon){
+      const lines=[];
+      if(f['Data acquisizione']) lines.push('Acquisizione: '+fmtDate(f['Data acquisizione']));
+      lines.push('Proprietà: EON SRL');
+      if(f['Presente in casa Irma']) lines.push('In casa Irma: '+f['Presente in casa Irma']);
+      if(f['Note']) lines.push('Note: '+f['Note']);
+      for(const ln of lines){ if(ty>y+h-pad) break; doc.text(fit(ln, mw), mx, ty); ty+=(big?2.5:2.2); }
+    } else {
+      for(const fld of cat.campi){
+        if(ty > y+h-pad) break;
+        if(fld.t==='area' || fld.k===cat.sub) continue;
+        const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
+        let disp=v;
+        if(fld.t==='date') disp=fmtDate(v); else if(fld.t==='cur') disp=fmtCur(v);
+        else if(fld.t==='num'&&/cm$/.test(fld.k)) disp=v+' cm'; else if(fld.t==='num'&&/kg$/.test(fld.k)) disp=v+' kg';
+        doc.text(fit(fld.l+': '+disp, mw), mx, ty); ty+=(big?2.5:2.2);
+      }
     }
   });
   const url=URL.createObjectURL(doc.output('blob'));
-  const nome=('Etichette '+cat.label).replace(/[^\w\-À-ſ ]/g,'').trim().slice(0,50)||'etichette';
+  const nome=('Etichette '+labelName).replace(/[^\w\-À-ſ ]/g,'').trim().slice(0,50)||'etichette';
   modal(`
-    <h2 style="margin-bottom:10px">Anteprima etichette — ${esc(cat.label)} · ${items.length} pezzi</h2>
+    <h2 style="margin-bottom:10px">Anteprima etichette — ${esc(labelName)} · ${items.length} pezzi</h2>
     <p class="note" style="margin-bottom:8px">Formato ${esc(E.nome)}. In stampa: <b>scala 100% / dimensioni reali</b> (niente "adatta alla pagina") e allinea con il tuo foglio.</p>
     <iframe src="${url}" style="width:100%; height:64vh; border:1px solid var(--line); border-radius:8px; background:#fff"></iframe>
     <div class="modal-actions">
