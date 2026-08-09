@@ -12,8 +12,10 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ error: { message: 'Config server mancante (ANTHROPIC_API_KEY).' } });
 
   const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-  const { catKey, catLabel, sing, titolo, hints, imageUrl, imageUrls, campi, currentFields, autore } = b;
+  const { catKey, catLabel, sing, titolo, hints, imageUrl, imageUrls, docUrls, campi, currentFields, autore } = b;
   const isCoin = catKey === 'numismatica';
+  const isMobili = catKey === 'mobili';
+  const senzaAutore = isCoin || isMobili;   // categorie senza "autore" d'archivio
 
   // 1) scarica TUTTE le foto (fino a 4: dritto, rovescio, dettagli) e convertile in base64 per Claude
   const urls = (Array.isArray(imageUrls) && imageUrls.length ? imageUrls : (imageUrl ? [imageUrl] : [])).slice(0, 4);
@@ -35,6 +37,28 @@ export default async function handler(req, res) {
     imageParts.push({ type: 'text', text: imgBlocks.length > 1 ? `Fotografia ${i + 1} di ${imgBlocks.length}:` : 'Fotografia:' });
     imageParts.push(blk);
   });
+
+  // 1-bis) documenti caricati (perizie, fatture, certificati): immagini o PDF, fino a 3
+  const dUrls = (Array.isArray(docUrls) ? docUrls : []).slice(0, 3);
+  const docParts = []; let nDoc = 0;
+  for (const u of dUrls) {
+    try {
+      const dr = await fetch(u);
+      if (!dr.ok) continue;
+      const ab = await dr.arrayBuffer();
+      const ct = (dr.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      const b64 = Buffer.from(ab).toString('base64');
+      nDoc++;
+      if (ct === 'application/pdf' || /\.pdf($|\?)/i.test(u)) {
+        docParts.push({ type: 'text', text: `Documento allegato ${nDoc} (PDF):` });
+        docParts.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } });
+      } else {
+        let mt = ct; if (!/^image\/(jpeg|png|gif|webp)$/.test(mt)) mt = 'image/jpeg';
+        docParts.push({ type: 'text', text: `Documento allegato ${nDoc} (immagine):` });
+        docParts.push({ type: 'image', source: { type: 'base64', media_type: mt, data: b64 } });
+      }
+    } catch (e) { /* si prosegue senza questo documento */ }
+  }
 
   // 2) schema dei campi che l'AI può compilare
   const schema = (campi || []).map(c => {
@@ -78,13 +102,29 @@ Regole di output IMPORTANTI:
 - I campi numerici (diametro, peso, spessore, anno) come numero o stringa numerica.
 - "autore" non si applica alle monete: restituisci un oggetto vuoto.`;
 
-  const system = isCoin ? systemMonete : systemArte;
+  const systemMobili = `Sei un esperto di mobili antichi e arredi, ebanisteria e mercato dell'antiquariato.
+Il tuo compito è schedare un mobile o arredo (categoria: ${catLabel || 'mobile'}) nel modo più completo, accurato e documentato possibile.
+Procedi così:
+1. Osserva con attenzione TUTTE le fotografie fornite (insieme e dettagli): tipologia del mobile, essenze e materiali (massello/lastronato, marmi, bronzi, ferramenta), tecnica costruttiva, intagli e decori, stile, marchi/etichette/bolli, stato di conservazione e restauri visibili.
+2. ESAMINA anche i DOCUMENTI allegati (perizie, fatture, certificati, cartellini): possono contenere autore/manifattura, epoca, provenienza, misure, prezzo e dati di stima — usali come fonte prioritaria e citali nelle Note/Provenienza.
+3. Tieni conto delle INDICAZIONI PRELIMINARI dell'utente: sono spunti, non certezze.
+4. USA la ricerca web per confermare o approfondire: stile e manifattura, datazione, ambito geografico, pezzi analoghi, quotazioni di mercato realistiche basate su realizzi comparabili d'asta.
+5. Compila i campi dello schema. Non inventare: se un dato non è determinabile, ometti il campo. Distingui i fatti dalle ipotesi e segnala il grado di certezza nei testi. Per le misure usa i campi numerici in centimetri.
 
-  const bloccoAutore = isCoin ? '' : `
+Regole di output IMPORTANTI:
+- Rispondi ESCLUSIVAMENTE con un unico oggetto JSON valido, senza testo prima o dopo, senza blocchi di codice.
+- Nelle chiavi di "opera" usa ESATTAMENTE i nomi di campo dello schema (tra virgolette). Ometti i campi che non sai compilare.
+- Per i campi con valori ammessi, usa solo uno di quelli.
+- I campi numerici (altezza, larghezza, profondità, anno) come numero o stringa numerica.
+- "autore" non si applica ai mobili: restituisci un oggetto vuoto.`;
+
+  const system = isCoin ? systemMonete : isMobili ? systemMobili : systemArte;
+
+  const bloccoAutore = senzaAutore ? '' : `
 AUTORE attualmente collegato:
 ${autoreCorr}
 `;
-  const formaJson = isCoin
+  const formaJson = senzaAutore
     ? `{
   "opera": { "<nome campo>": "<valore>", ... },
   "autore": {},
@@ -92,7 +132,7 @@ ${autoreCorr}
   "riepilogo": "2-3 frasi su cosa hai riconosciuto e con quale certezza",
   "fonti": ["url", "url"]
 }
-Per le monete "autore" non si applica: lascialo come oggetto vuoto {}.`
+Per questa categoria "autore" non si applica: lascialo come oggetto vuoto {}.`
     : `{
   "opera": { "<nome campo>": "<valore>", ... },
   "autore": { "Nome": "...", "Nascita": "...", "Morte": "...", "Nazionalità": "...", "Biografia": "...(anche Markdown)...", "Note": "..." },
@@ -104,7 +144,8 @@ Se non riesci a identificare l'autore, lascia "autore" con i soli campi che cono
   const notaFoto = imgBlocks.length > 1
     ? `Sono allegate ${imgBlocks.length} fotografie dello stesso esemplare (esaminale TUTTE${isCoin ? '; di norma la 1ª è il dritto e la 2ª il rovescio' : ''}).\n\n`
     : '';
-  const userText = `${notaFoto}INDICAZIONI PRELIMINARI dell'utente:
+  const notaDoc = nDoc ? `Sono allegati anche ${nDoc} documento/i (perizie, fatture, certificati): ESAMINALI e usane i dati (autore/manifattura, epoca, provenienza, misure, prezzo/stima).\n\n` : '';
+  const userText = `${notaFoto}${notaDoc}INDICAZIONI PRELIMINARI dell'utente:
 ${hints || '(nessuna)'}
 
 TITOLO/denominazione provvisoria: ${titolo || '(non indicato)'}
@@ -123,7 +164,7 @@ ${formaJson}`;
     max_tokens: 4096,
     system,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
-    messages: [{ role: 'user', content: [{ type: 'text', text: userText }, ...imageParts] }]
+    messages: [{ role: 'user', content: [{ type: 'text', text: userText }, ...imageParts, ...docParts] }]
   };
 
   try {

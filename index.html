@@ -561,7 +561,7 @@ const CAT = [
   {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri, autore:true, ai:true},
   {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti},
   {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture, autore:true},
-  {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili},
+  {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili, ai:true},
   {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
   {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche},
   {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true},
@@ -1695,7 +1695,7 @@ function _imgUrlRecord(cat, f){ const a=(f[cat.foto]||[])[0]; return a ? ((a.thu
 function _imgUrlsRecord(cat, f){ return (f[cat.foto]||[]).slice(0,4).map(a=>(a.thumbnails&&a.thumbnails.large&&a.thumbnails.large.url)||a.url).filter(Boolean); }
 function openAiCompila(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
-  const f = o.fields; const img = _imgUrlRecord(cat, f); const nFoto = (f[cat.foto]||[]).length;
+  const f = o.fields; const img = _imgUrlRecord(cat, f); const nFoto = (f[cat.foto]||[]).length; const nDoc = (f['Documenti']||[]).length;
   const seed = [];
   if(f['Attribuzione']) seed.push('Attribuzione: '+f['Attribuzione']);
   if(f[cat.sub]) seed.push('Autore ipotizzato: '+f[cat.sub]);
@@ -1706,7 +1706,7 @@ function openAiCompila(catKey, id){
     <div class="detail" style="grid-template-columns:auto 1fr; gap:16px; align-items:start">
       <div class="cover" style="width:min(240px,40vw)">${img?`<img src="${esc(img)}">`:`<div class="noimg">nessuna foto</div>`}</div>
       <div class="meta">
-        <div class="note">L'AI osserva ${nFoto>1?`tutte le <b>${nFoto} foto</b> (dritto, rovescio, dettagli — fino a 4)`:'la foto'}, fa ricerche sul web e propone i campi della scheda e la biografia dell'autore. Poi scegli cosa applicare; resta tutto modificabile a mano.</div>
+        <div class="note">L'AI osserva ${nFoto>1?`tutte le <b>${nFoto} foto</b> (fino a 4)`:'la foto'}${nDoc?` e <b>${nDoc} documento/i</b> allegati (perizie, fatture, anche PDF)`:''}, fa ricerche sul web e propone i campi della scheda${cat.autore?" e la biografia dell'autore":''}. Poi scegli cosa applicare; resta tutto modificabile a mano.</div>
         <div class="field" style="margin-top:10px"><label>Indicazioni preliminari (facoltative)</label>
           <textarea id="ai-hints" style="min-height:90px" placeholder="Es. «probabile scuola toscana '600», provenienza, firma illeggibile, ipotesi d'autore, note storiche…">${esc(seed.join('. '))}</textarea></div>
         ${img?'':'<p class="note" style="color:var(--amber)">⚠️ Nessuna fotografia sulla scheda: l\'analisi userà solo le indicazioni testuali. Aggiungi una foto per risultati migliori.</p>'}
@@ -1722,6 +1722,7 @@ function openAiCompila(catKey, id){
 async function avviaAi(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
   const f = o.fields; const imageUrls = _imgUrlsRecord(cat, f); const imageUrl = imageUrls[0] || '';
+  const docUrls = (f['Documenti']||[]).slice(0,3).map(a=>a.url).filter(Boolean);   // perizie/fatture/certificati (anche PDF)
   const hints = (document.getElementById('ai-hints')||{}).value || '';
   const skip = new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato','Fonti']);
   const campi = cat.campi.filter(c=>!skip.has(c.k)).map(c=>({k:c.k,l:c.l,t:c.t||'text',ch:c.ch}));
@@ -1736,7 +1737,7 @@ async function avviaAi(catKey, id){
   _aiBusy = true;
   try{
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
-      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, imageUrls, campi, currentFields:curr, autore }) });
+      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, imageUrls, docUrls, campi, currentFields:curr, autore }) });
     if(r.status===401){ chiediPassword(); return; }
     const txt = await r.text();
     let j = null; try{ j = JSON.parse(txt); }catch(e){}
@@ -2777,7 +2778,7 @@ function mediaSection(cat, o){
   const docs = f['Documenti'] || [];
   const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
   const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
-    + (['numismatica','quadri','mobili'].includes(cat.key) ? `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>` : '')
+    + `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>`
     + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
   const gallery = fotos.map(ph).join('')
     + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
