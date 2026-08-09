@@ -346,6 +346,7 @@
       <div style="display:flex; gap:8px; flex-wrap:wrap">
         <button class="btn secondary" onclick="stampaStrumentiEon(true)">🖨 Stampa (in casa Irma)</button>
         <button class="btn secondary" onclick="stampaStrumentiEon(false)">🖨 Stampa tutti</button>
+        <button class="btn secondary" onclick="apriEtichetteEon()">🏷 Etichette</button>
         <button class="btn" onclick="openStrumento(null)">➕ Nuovo bene</button>
       </div>
     </div>
@@ -2295,6 +2296,10 @@ const ETICHETTE = {
   '8697': { nome:'38 × 21,2 mm — 65 per foglio (No. 8697)',   lw:38,   lh:21.2, cols:5, rows:13, mL:10,   mT:10.7, gX:0,   gY:0, inset:0 }
 };
 let _etUsed = new Set();   // posizioni già usate del foglio (modalità riuso)
+function apriEtichetteEon(){
+  apriEtichette();
+  const sel=document.getElementById('et-cat'); if(sel){ sel.value='strumenti'; onEtCatChange(); }
+}
 function apriEtichette(){
   _etUsed = new Set();
   const def=(catFiltro && catByKey(catFiltro))?catFiltro:CAT[0].key;
