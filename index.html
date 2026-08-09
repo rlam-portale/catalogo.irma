@@ -2777,7 +2777,7 @@ function mediaSection(cat, o){
   const docs = f['Documenti'] || [];
   const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
   const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
-    + (['numismatica','quadri'].includes(cat.key) ? `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>` : '')
+    + (['numismatica','quadri','mobili'].includes(cat.key) ? `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>` : '')
     + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
   const gallery = fotos.map(ph).join('')
     + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
