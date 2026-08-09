@@ -176,6 +176,7 @@
       <button data-view="wishlist">Lista desideri</button>
       <button data-view="autori">Autori</button>
       <button data-view="collocazioni">Collocazioni</button>
+      <button data-view="strumenti">🛠 Strumenti EON</button>
       <button data-view="impostazioni">⚙︎</button>
     </nav>
   </div>
@@ -337,6 +338,20 @@
     <div id="coll-list"></div>
   </section>
 
+  <!-- ============ STRUMENTI DI LAVORO EON ============ -->
+  <section id="view-strumenti" class="hidden">
+    <div class="eon-banner">🛠 <b>Strumenti di lavoro — proprietà EON SRL</b> · beni aziendali distinti dalla collezione Irma (alcuni fisicamente presenti in casa di Irma).</div>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0; flex-wrap:wrap">
+      <h2 style="margin:0">Strumenti di lavoro EON</h2>
+      <button class="btn" onclick="openStrumento(null)">➕ Nuovo bene</button>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="q-strumenti" placeholder="Cerca per codice, descrizione o categoria…" oninput="renderStrumenti()" style="flex:1; min-width:240px">
+      <span class="counts" id="strumenti-count"></span>
+    </div>
+    <div id="strumenti-list"></div>
+  </section>
+
 </main>
 
 <div id="modal-root"></div>
@@ -344,7 +359,9 @@
 
 <script>
 /* ================== CONFIG & STATO ================== */
-const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti', autori:'Autori' };
+const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti', autori:'Autori', strumenti:'Strumenti di lavoro EON' };
+let strumenti = [];   // beni EON SRL (sezione separata, esclusa dai totali di Irma)
+const EON_CAT = ['102.00033 Licenze software','104.00012 Impianti specifici','104.00015 Impianti telefonici','104.00022 Attrezzature varie e minute','104.00031 Mobili',"104.00032 Macchine elettriche/elettroniche d'ufficio",'104.00033 Autovetture','104.00035 Arredamento','104.00037 Beni strumentali inferiori a 516,46','104.00038 Motoveicoli e ciclomotori'];
 const AUTORE_LINK = 'Autore (archivio)';   // campo link verso l'archivio Autori
 const STATO_COLORS = {'Da leggere':'var(--blue)','In lettura':'var(--amber)','Letto':'var(--green)','Abbandonato':'var(--muted)'};
 const GENERI = ['Narrativa','Saggistica','Giallo/Thriller','Fantascienza','Fantasy','Storia','Biografia','Poesia','Arte','Scienza','Filosofia','Viaggi','Fumetto','Bambini/Ragazzi','Altro'];
@@ -680,12 +697,13 @@ async function loadAll(force){
   if(!token || !base){ show('impostazioni'); return; }
   document.getElementById('catalog-loading').classList.remove('hidden');
   try{
-    const res = await Promise.all([ ...CAT.map(c=>listAll(c.tbl)), listAll(TBL.coll), listAll(TBL.prestiti), listAll(TBL.autori) ]);
+    const res = await Promise.all([ ...CAT.map(c=>listAll(c.tbl)), listAll(TBL.coll), listAll(TBL.prestiti), listAll(TBL.autori), listAll(TBL.strumenti) ]);
     CAT.forEach((c,i)=> objs[c.key] = res[i]);
     books = objs.libri;                 // stesso riferimento: il codice dei libri continua a funzionare
     colls = res[CAT.length];
     loans = res[CAT.length+1];
     autori = res[CAT.length+2];
+    strumenti = res[CAT.length+3] || [];
     loaded = true;
     fillFilters(); renderAll();
   }catch(e){ toast(e.message); if(String(e.message).includes('401')||String(e.message).includes('403')) show('impostazioni'); }
@@ -716,9 +734,10 @@ function show(view){
     const el = document.getElementById('cfg-pw'); if(el) el.value = appPw();
   }
   if(view==='catalogo') catFiltro = '';   // aprendo "Catalogo" si torna alla main page (sezioni)
-  if(['catalogo','prestiti','wishlist','collocazioni','autori'].includes(view)) loadAll();
+  if(['catalogo','prestiti','wishlist','collocazioni','autori','strumenti'].includes(view)) loadAll();
   if(view==='catalogo') renderCatalog();  // assicura il render della main anche se i dati sono già caricati
   if(view==='autori') renderAutori();
+  if(view==='strumenti') renderStrumenti();
   if(view==='aggiungi'){ loadAll(); renderAddChips(); setAddCat(addCat); }
 }
 
@@ -745,7 +764,63 @@ async function testConnection(goCatalog){
 
 /* ================== RENDER ================== */
 let addCat = 'libri';
-function renderAll(){ renderChips(); renderAddChips(); renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); renderAutori(); }
+function renderAll(){ renderChips(); renderAddChips(); renderTiles(); renderCatalog(); renderWishlist(); renderLoans(); renderColls(); renderAutori(); renderStrumenti(); }
+/* ================== STRUMENTI DI LAVORO EON ================== */
+function strumentoById(id){ return strumenti.find(s=>s.id===id); }
+function renderStrumenti(){
+  const wrap = document.getElementById('strumenti-list'); if(!wrap) return;
+  const ql = ((document.getElementById('q-strumenti')||{}).value||'').toLowerCase().trim();
+  let list = strumenti.slice();
+  if(ql) list = list.filter(r=>{ const f=r.fields; return [f['Codice'],f['Descrizione'],f['Categoria']].some(v=>String(v||'').toLowerCase().includes(ql)); });
+  const cnt = document.getElementById('strumenti-count'); if(cnt) cnt.textContent = `${list.length} di ${strumenti.length} beni`;
+  if(!list.length){ wrap.innerHTML = `<div class="empty">${strumenti.length?'Nessun bene con questa ricerca.':'Nessun bene EON.'}</div>`; return; }
+  const groups = {}; list.forEach(r=>{ const c=r.fields['Categoria']||'(senza categoria)'; (groups[c]=groups[c]||[]).push(r); });
+  const cats = Object.keys(groups).sort((a,b)=>a.localeCompare(b,'it',{numeric:true}));
+  const badge = p => { const c = p==='Sì'?'var(--green)':p==='No'?'var(--muted)':'var(--amber)'; return `<span class="pill" style="background:${c}; font-size:11px">${esc(p||'Da verificare')}</span>`; };
+  wrap.innerHTML = cats.map(cat=>{
+    const rows = groups[cat].slice().sort((a,b)=>String(a.fields['Codice']||'').localeCompare(String(b.fields['Codice']||''),'it',{numeric:true}));
+    return `<div class="eon-cat"><div class="eon-cat-h">${esc(cat)} <span class="note">· ${rows.length}</span></div>
+      <div class="tab-scroll" style="max-height:none"><table class="tab-num"><colgroup><col style="width:170px"><col><col style="width:150px"></colgroup>
+      <thead><tr><th>Codice</th><th>Descrizione</th><th>Presente in casa Irma</th></tr></thead>
+      <tbody>${rows.map(r=>{ const f=r.fields; return `<tr onclick="openStrumento('${r.id}')"><td>${esc(f['Codice']||'')}</td><td>${esc(f['Descrizione']||'')}</td><td>${badge(f['Presente in casa Irma'])}</td></tr>`; }).join('')}</tbody></table></div></div>`;
+  }).join('');
+}
+function openStrumento(id){
+  const s = id ? strumentoById(id) : null; const f = s ? s.fields : {};
+  const pres = f['Presente in casa Irma'] || 'Da verificare';
+  modal(`
+    <h2>🛠 ${id?esc((f['Codice']||'')+' — '+(f['Descrizione']||'')):'Nuovo bene EON'}</h2>
+    <p class="note" style="margin-bottom:12px">Proprietà <b>EON SRL</b>${f['Categoria']?' · '+esc(f['Categoria']):''}</p>
+    <div class="frow">
+      <div class="field"><label>Codice</label><input id="st-cod" value="${escAttr(f['Codice']||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Descrizione</label><input id="st-desc" value="${escAttr(f['Descrizione']||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="st-cat"><option value=""></option>${EON_CAT.map(c=>`<option ${c===f['Categoria']?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="field"><label>Presente in casa Irma</label><select id="st-pres">${['Da verificare','Sì','No'].map(o=>`<option ${o===pres?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="field"><label>Data di acquisizione</label><input id="st-data" type="date" value="${f['Data acquisizione']||''}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Note</label><textarea id="st-note">${esc(f['Note']||'')}</textarea></div>
+    </div>
+    <div class="modal-actions">
+      ${id?`<button class="btn danger small left" onclick="delStrumento('${id}')">Elimina</button>`:''}
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+      <button class="btn" onclick="salvaStrumento(${id?`'${id}'`:'null'})">💾 Salva</button>
+    </div>`);
+}
+async function salvaStrumento(id){
+  const g = x => (document.getElementById(x)||{}).value;
+  const fields = { 'Codice':g('st-cod').trim(), 'Descrizione':g('st-desc').trim(), 'Categoria':g('st-cat')||null,
+    'Presente in casa Irma':g('st-pres'), 'Data acquisizione':g('st-data')||null, 'Note':g('st-note'), 'Proprietario':'EON SRL' };
+  if(!fields['Descrizione'] && !fields['Codice']){ toast('Inserisci almeno codice o descrizione'); return; }
+  try{
+    if(id){ const j=await updateRec(TBL.strumenti,id,fields); const i=strumenti.findIndex(s=>s.id===id); if(i>=0) strumenti[i]=j; }
+    else { const jr=await createRec(TBL.strumenti,fields); strumenti.push(jr.records[0]); }
+    closeModal(); renderStrumenti(); toast('💾 Salvato');
+  }catch(e){ toast(e.message); }
+}
+async function delStrumento(id){
+  if(!confirm('Eliminare questo bene EON dall\'elenco?')) return;
+  try{ await deleteRec(TBL.strumenti,id); strumenti=strumenti.filter(s=>s.id!==id); closeModal(); renderStrumenti(); toast('Bene eliminato'); }
+  catch(e){ toast(e.message); }
+}
 function autoreById(id){ return autori.find(a=>a.id===id); }
 /* Opere in catalogo di un autore: collegate esplicitamente (Autore archivio) o combacianti per nome. */
 function opereDiAutore(id){
