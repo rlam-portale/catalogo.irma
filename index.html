@@ -2505,11 +2505,12 @@ function apriInventario(){
     + CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('');
   modal(`
     <h2>📋 Stampa inventario</h2>
-    <p class="note">Elenco compatto in tabella — una riga per pezzo, con valore stimato e totali. Scegli una singola sezione o l'intera collezione. L'intervallo di codici vale solo per una singola sezione.</p>
+    <p class="note">Elenco compatto in tabella — una riga per pezzo. Scegli una singola sezione o l'intera collezione (separata per sezioni). L'intervallo di codici vale solo per una singola sezione.</p>
     <div class="frow">
       <div class="field" style="grid-column:1/-1"><label>Sezione</label><select id="inv-cat">${opts}</select></div>
       <div class="field"><label>Da codice n. (opzionale)</label><input id="inv-from" type="number" min="1"></div>
       <div class="field"><label>A codice n. (opzionale)</label><input id="inv-to" type="number" min="1"></div>
+      <div class="field" style="grid-column:1/-1"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink)"><input type="checkbox" id="inv-valori" checked style="width:auto"> Includi valore stimato e totali</label></div>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" onclick="closeModal()">Annulla</button>
@@ -2520,9 +2521,11 @@ function avviaInventario(){
   const k=document.getElementById('inv-cat').value;
   const from=Number(document.getElementById('inv-from').value)||0;
   const to=Number(document.getElementById('inv-to').value)||0;
-  closeModal(); stampaInventario(k, from, to);
+  const valori=(document.getElementById('inv-valori')||{}).checked;
+  closeModal(); stampaInventario(k, from, to, valori);
 }
-async function stampaInventario(catKey, fromN, toN){
+async function stampaInventario(catKey, fromN, toN, includiValori){
+  includiValori = includiValori!==false;
   toast('Preparo l\'inventario…');
   try{ await loadScript(CDN.jspdf); }catch(e){ toast('Impossibile caricare il generatore PDF'); return; }
   const JS=(window.jspdf||{}).jsPDF; if(!JS){ toast('Generatore PDF non disponibile'); return; }
@@ -2538,11 +2541,11 @@ async function stampaInventario(catKey, fromN, toN){
     doc.setFont('times','bold'); doc.setFontSize(12); doc.setTextColor(brown[0],brown[1],brown[2]); doc.setCharSpace(0.6);
     doc.text('CATALOGO DAJLANI AREZZO', M, 13); doc.setCharSpace(0);
     doc.setFont('times','italic'); doc.setFontSize(10); doc.setTextColor(muted[0],muted[1],muted[2]);
-    doc.text('Inventario', W-M, 13, {align:'right'});
+    doc.text(includiValori?'Inventario':'Inventario (senza stime)', W-M, 13, {align:'right'});
     doc.setDrawColor(brown[0],brown[1],brown[2]); doc.setLineWidth(0.4); doc.line(M,16,W-M,16);
   };
-  // colonne: Codice | Denominazione | sub | Stato | Valore(dx)
-  const cCod=22, cVal=22, cStat=20, rest=CW-cCod-cVal-cStat;
+  // colonne: Codice | Denominazione | sub | Stato | Valore(dx). Senza valori, la colonna Valore sparisce.
+  const cCod=22, cStat=20, cVal=includiValori?22:0, rest=CW-cCod-cVal-cStat;
   const cTit=rest*0.58, cSub=rest*0.42;
   const xCod=M, xTit=M+cCod, xSub=xTit+cTit, xStat=xSub+cSub, xVal=M+CW;
   let y=TOP; brand();
@@ -2551,7 +2554,7 @@ async function stampaInventario(catKey, fromN, toN){
     doc.setFont('helvetica','bold'); doc.setFontSize(7.2); doc.setTextColor(muted[0],muted[1],muted[2]);
     doc.text('Codice', xCod, y+3.4); doc.text('Denominazione', xTit, y+3.4);
     doc.text(fit(cat.sub||'', cSub-2), xSub, y+3.4); doc.text('Stato', xStat, y+3.4);
-    doc.text('Valore', xVal, y+3.4, {align:'right'});
+    if(includiValori) doc.text('Valore', xVal, y+3.4, {align:'right'});
     doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.3); doc.line(M, y+4.6, M+CW, y+4.6);
     y+=6;
   };
@@ -2581,14 +2584,14 @@ async function stampaInventario(catKey, fromN, toN){
       doc.text(fit(String(f[cat.sub]||''), cSub-2), xSub, y+3.3);
       doc.setTextColor(ink[0],ink[1],ink[2]);
       doc.text(fit(statoF, cStat-2), xStat, y+3.3);
-      if(val) doc.text(fmtCur(val), xVal, y+3.3, {align:'right'});
+      if(includiValori && val) doc.text(fmtCur(val), xVal, y+3.3, {align:'right'});
       y+=rowH;
     }
     ensure(7, cat);
     doc.setDrawColor(line[0],line[1],line[2]); doc.setLineWidth(0.3); doc.line(M, y+0.4, M+CW, y+0.4);
     doc.setFont('helvetica','bold'); doc.setFontSize(7.6); doc.setTextColor(ink[0],ink[1],ink[2]);
-    doc.text((multi?cat.label+' — ':'Totale ')+items.length+' pezzi · valore stimato', xTit, y+4.2);
-    if(sub) doc.text(fmtCur(sub), xVal, y+4.2, {align:'right'});
+    doc.text((multi?cat.label+' — ':'Totale ')+items.length+' pezzi'+(includiValori?' · valore stimato':''), xTit, y+4.2);
+    if(includiValori && sub) doc.text(fmtCur(sub), xVal, y+4.2, {align:'right'});
     y+=8;
     totPezzi+=items.length;
   }
@@ -2598,7 +2601,7 @@ async function stampaInventario(catKey, fromN, toN){
     doc.setDrawColor(brown[0],brown[1],brown[2]); doc.setLineWidth(0.5); doc.line(M, y, M+CW, y);
     doc.setFont('times','bold'); doc.setFontSize(11); doc.setTextColor(brown[0],brown[1],brown[2]);
     doc.text('TOTALE GENERALE — '+totPezzi+' pezzi', M, y+6);
-    if(grand) doc.text(fmtCur(grand), M+CW, y+6, {align:'right'});
+    if(includiValori && grand) doc.text(fmtCur(grand), M+CW, y+6, {align:'right'});
   }
   const total=doc.getNumberOfPages();
   for(let i=1;i<=total;i++){
