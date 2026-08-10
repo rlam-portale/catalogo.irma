@@ -336,3 +336,6 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 .eon-cat-h{ font-family:var(--f-mono); font-size:12.5px; color:var(--ink-medio); margin:0 0 6px; font-weight:500; }
 .eon-cat .tab-num td, .eon-cat .tab-num th{ white-space:normal; }
 .eon-cat .tab-num td:first-child{ font-family:var(--f-mono); }
+
+/* azioni rapide nella home (stampe/inventario/etichette) */
+.home-actions{ display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }

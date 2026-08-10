@@ -1262,6 +1262,11 @@ function renderHome(){
       </div>
       <label class="home-search">${ti('search')}<input type="search" id="q-home" placeholder="Cerca in tutto il catalogo" value="${escAttr(qGlobale)}" oninput="homeSearch(this.value)"></label>
     </div>
+    <div class="home-actions">
+      <button class="btn secondary small" onclick="apriInventario()">📋 Inventario</button>
+      <button class="btn secondary small" onclick="apriStampaCatalogo()">🖨 Stampa catalogo</button>
+      <button class="btn secondary small" onclick="apriEtichette()">🏷 Etichette</button>
+    </div>
     ${ripartizioneHTML(attive, totN)}`;
   renderHomeBody();
 }
