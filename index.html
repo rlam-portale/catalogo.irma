@@ -368,9 +368,22 @@ const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti', autori:'A
 let strumenti = [];   // beni EON SRL (sezione separata, esclusa dai totali di Irma)
 /* Anti-doppio-invio: un solo salvataggio alla volta, per evitare doppioni da clic ripetuti
    (la conferma "salvato" può arrivare con ritardo). Vale per ogni sezione e ogni salvataggio. */
-let _salvataggioInCorso = false;
-function _saveGuard(){ if(_salvataggioInCorso){ toast('⏳ Salvataggio in corso, attendi…'); return false; } _salvataggioInCorso = true; return true; }
-function _saveEnd(){ _salvataggioInCorso = false; }
+let _salvataggioInCorso = false, _lastBtn = null, _lastBtnTs = 0, _saveBtn = null;
+document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('button'); if(b){ _lastBtn=b; _lastBtnTs=Date.now(); } }, true);
+function _saveGuard(){
+  if(_salvataggioInCorso){ toast('⏳ Salvataggio in corso, attendi…'); return false; }
+  _salvataggioInCorso = true;
+  const b = _lastBtn;   // il pulsante appena cliccato: disabilitalo e mostra "Salvo…"
+  if(b && (Date.now()-_lastBtnTs) < 1500 && b.isConnected && !b.disabled){
+    _saveBtn = { el:b, html:b.innerHTML }; b.disabled = true; b.innerHTML = '💾 Salvo…';
+  } else _saveBtn = null;
+  return true;
+}
+function _saveEnd(){
+  _salvataggioInCorso = false;
+  if(_saveBtn && _saveBtn.el.isConnected){ _saveBtn.el.disabled = false; _saveBtn.el.innerHTML = _saveBtn.html; }
+  _saveBtn = null;
+}
 const EON_CAT = ['102.00033 Licenze software','104.00012 Impianti specifici','104.00015 Impianti telefonici','104.00022 Attrezzature varie e minute','104.00031 Mobili',"104.00032 Macchine elettriche/elettroniche d'ufficio",'104.00033 Autovetture','104.00035 Arredamento','104.00037 Beni strumentali inferiori a 516,46','104.00038 Motoveicoli e ciclomotori'];
 const AUTORE_LINK = 'Autore (archivio)';   // campo link verso l'archivio Autori
 const STATO_COLORS = {'Da leggere':'var(--blue)','In lettura':'var(--amber)','Letto':'var(--green)','Abbandonato':'var(--muted)'};
