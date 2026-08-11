@@ -366,6 +366,11 @@
 /* ================== CONFIG & STATO ================== */
 const TBL = { libri:'Libri', coll:'Collocazioni', prestiti:'Prestiti', autori:'Autori', strumenti:'Strumenti di lavoro EON' };
 let strumenti = [];   // beni EON SRL (sezione separata, esclusa dai totali di Irma)
+/* Anti-doppio-invio: un solo salvataggio alla volta, per evitare doppioni da clic ripetuti
+   (la conferma "salvato" può arrivare con ritardo). Vale per ogni sezione e ogni salvataggio. */
+let _salvataggioInCorso = false;
+function _saveGuard(){ if(_salvataggioInCorso){ toast('⏳ Salvataggio in corso, attendi…'); return false; } _salvataggioInCorso = true; return true; }
+function _saveEnd(){ _salvataggioInCorso = false; }
 const EON_CAT = ['102.00033 Licenze software','104.00012 Impianti specifici','104.00015 Impianti telefonici','104.00022 Attrezzature varie e minute','104.00031 Mobili',"104.00032 Macchine elettriche/elettroniche d'ufficio",'104.00033 Autovetture','104.00035 Arredamento','104.00037 Beni strumentali inferiori a 516,46','104.00038 Motoveicoli e ciclomotori'];
 const AUTORE_LINK = 'Autore (archivio)';   // campo link verso l'archivio Autori
 const STATO_COLORS = {'Da leggere':'var(--blue)','In lettura':'var(--amber)','Letto':'var(--green)','Abbandonato':'var(--muted)'};
@@ -815,11 +820,12 @@ async function salvaStrumento(id){
   const fields = { 'Codice':g('st-cod').trim(), 'Descrizione':g('st-desc').trim(), 'Categoria':g('st-cat')||null,
     'Presente in casa Irma':g('st-pres'), 'Data acquisizione':g('st-data')||null, 'Note':g('st-note'), 'Proprietario':'EON SRL' };
   if(!fields['Descrizione'] && !fields['Codice']){ toast('Inserisci almeno codice o descrizione'); return; }
+  if(!_saveGuard()) return;
   try{
     if(id){ const j=await updateRec(TBL.strumenti,id,fields); const i=strumenti.findIndex(s=>s.id===id); if(i>=0) strumenti[i]=j; }
     else { const jr=await createRec(TBL.strumenti,fields); strumenti.push(jr.records[0]); }
     closeModal(); renderStrumenti(); toast('💾 Salvato');
-  }catch(e){ toast(e.message); }
+  }catch(e){ toast(e.message); } finally{ _saveEnd(); }
 }
 async function delStrumento(id){
   if(!confirm('Eliminare questo bene EON dall\'elenco?')) return;
@@ -1036,13 +1042,14 @@ async function saveAutore(id){
   const fields = { 'Nome':nome, 'Nascita':g('au-nascita').trim()||null, 'Morte':g('au-morte').trim()||null,
     'Nazionalità':g('au-naz').trim()||null, 'Biografia':g('au-bio')||null, 'Note':g('au-note')||null };
   const file = (document.getElementById('au-foto')||{}).files?.[0];
+  if(!_saveGuard()) return;
   try{
     let recId = id;
     if(id){ const j = await updateRec(TBL.autori, id, fields); const i=autori.findIndex(x=>x.id===id); if(i>=0) autori[i]=j; }
     else { const j = await createRec(TBL.autori, fields); autori.push(j.records[0]); recId = j.records[0].id; }
     if(file){ try{ await uploadFile(recId, 'Foto', file); const j2 = await api(encodeURIComponent(TBL.autori)+'/'+recId); const i=autori.findIndex(x=>x.id===recId); if(i>=0) autori[i]=j2; }catch(e){ toast('Foto non caricata: '+e.message); } }
     closeModal(); renderAutori(); toast('💾 Autore salvato');
-  }catch(e){ toast(e.message); }
+  }catch(e){ toast(e.message); } finally{ _saveEnd(); }
 }
 async function deleteAutore(id){
   if(nAutoreOpere(id)>0){ toast('Autore collegato a delle opere: scollegalo prima'); return; }
@@ -1695,11 +1702,12 @@ async function saveBook(id){
     'Descrizione': document.getElementById('bf-desc').value,
     'Note': document.getElementById('bf-note').value
   };
+  if(!_saveGuard()) return;
   try{
     if(id){ const j = await updateRec(TBL.libri, id, fields); const i = books.findIndex(b=>b.id===id); books[i]=j; }
     else{ books.push(await creaLibro(fields)); }
     closeModal(); fillFilters(); renderAll(); toast('📗 Libro salvato');
-  }catch(e){ toast(e.message); }
+  }catch(e){ toast(e.message); } finally{ _saveEnd(); }
 }
 
 async function delBook(id){
@@ -2906,14 +2914,17 @@ async function _doAutosalva(){
 }
 /* Pulsante "Salva e chiudi". */
 async function salvaModale(){
-  if(_ofCat==='musica' && !_ofId) return saveObj('musica', null);   // flusso completo per i dischi nuovi
+  if(_ofCat==='musica' && !_ofId) return saveObj('musica', null);   // flusso completo per i dischi nuovi (ha già la sua guardia)
   if(!raccogliCampi(catByKey(_ofCat))['Titolo']){ toast('Il titolo è obbligatorio'); return; }
-  const wasNew = _ofWasNew, catKey = _ofCat;
-  await _doAutosalva();
-  const rid = _ofId;
-  closeModal();
-  toast('💾 Scheda salvata');
-  if(wasNew && rid) openObjDetail(catKey, rid);   // apri la scheda per foto/documenti
+  if(!_saveGuard()) return;
+  try{
+    const wasNew = _ofWasNew, catKey = _ofCat;
+    await _doAutosalva();
+    const rid = _ofId;
+    closeModal();
+    toast('💾 Scheda salvata');
+    if(wasNew && rid) openObjDetail(catKey, rid);   // apri la scheda per foto/documenti
+  } finally{ _saveEnd(); }
 }
 /* estrae gli importi dalla "forbice" del valore di catalogo (es. "€ 150 – 300" → [150,300]).
    Se nel testo ci sono numeri non-anno, scarta gli eventuali anni (1900-2099) così
@@ -2969,6 +2980,7 @@ async function saveObj(catKey, id){
       }
     }
   }
+  if(!_saveGuard()) return;
   try{
     if(id){
       const j = await updateRec(cat.tbl, id, fields);
@@ -2985,7 +2997,7 @@ async function saveObj(catKey, id){
       toast(hadCover ? '✅ Scheda creata con copertina' : '✅ Scheda creata — ora aggiungi le fotografie');
       openObjDetail(catKey, rec.id);
     }
-  }catch(e){ toast(e.message); }
+  }catch(e){ toast(e.message); } finally{ _saveEnd(); }
 }
 
 async function delObj(catKey, id){
@@ -4271,8 +4283,9 @@ async function addCollocazione(){
   const inp = document.getElementById('new-coll');
   const name = inp.value.trim();
   if(!name){ toast('Scrivi il nome della collocazione'); return; }
+  if(!_saveGuard()) return;
   try{ const j = await createRec(TBL.coll, {'Nome':name}); colls.push(j.records[0]); inp.value=''; fillFilters(); renderColls(); toast('Collocazione aggiunta'); }
-  catch(e){ toast(e.message); }
+  catch(e){ toast(e.message); } finally{ _saveEnd(); }
 }
 async function delCollocazione(id){
   if(!confirm('Eliminare questa collocazione?')) return;
