@@ -1,8 +1,12 @@
 # Catalogo Dajlani — deploy su Vercel
 
-L'app è ora una pagina statica (`index.html`) + tre funzioni serverless in `/api`
-che fanno da **proxy** verso Airtable e Discogs. I token restano nelle variabili
-d'ambiente di Vercel: nel browser c'è solo una **password condivisa**.
+L'app è una pagina statica (`index.html`) + funzioni serverless in `/api`.
+Da agosto 2026 i dati non stanno più su Airtable ma su **Supabase**
+(PostgreSQL, schema `catalogo` + storage `catalogo` per foto e documenti);
+le funzioni `/api/airtable` e `/api/upload` mantengono il vecchio formato
+di risposta, così la pagina non è cambiata. Le chiavi restano nelle
+variabili d'ambiente di Vercel: nel browser c'è solo una **password
+condivisa**.
 
 Così il catalogo è raggiungibile da qualsiasi PC: si apre l'URL, si digita la
 password una volta (viene ricordata sul dispositivo) e funziona.
@@ -16,8 +20,8 @@ password una volta (viene ricordata sul dispositivo) e funziona.
 ## 2. Variabili d'ambiente (Project → Settings → Environment Variables)
 | Nome | Valore |
 |------|--------|
-| `AIRTABLE_TOKEN` | Personal Access Token Airtable (scope `data.records:read` + `data.records:write` sulla base) |
-| `AIRTABLE_BASE`  | `appI6zidIy0DriyoG` (la base "Biblioteca Personale") |
+| `SUPABASE_URL` | `https://eioslyhjwctwnfmiaapr.supabase.co` (progetto "Db Paolo") |
+| `SUPABASE_KEY` | la chiave *service role* del progetto Supabase (Settings → API) |
 | `DISCOGS_TOKEN`  | token Discogs (facoltativo, migliora il riconoscimento dischi) |
 | `APP_PASSWORD`   | la password condivisa che digiterai in famiglia |
 | `ANTHROPIC_API_KEY` | chiave API Anthropic — serve alla catalogazione assistita dall'AI (quadri). Creala su https://console.anthropic.com |
