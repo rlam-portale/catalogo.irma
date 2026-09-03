@@ -126,6 +126,10 @@ nav button.active{ background:transparent; color:var(--ink); border-radius:0; bo
 .cover .noimg{ font-family:var(--f-ui); color:var(--ink-fioco); }
 .code{ background:rgba(23,23,26,.62); letter-spacing:.02em; }
 .catbadge{ background:rgba(255,255,255,.94); color:var(--accent-dark); box-shadow:var(--shadow); font-weight:500; }
+/* icona Spotify sulla copertina del disco (in basso a destra) quando collegato */
+.card-sp{ position:absolute; bottom:8px; right:8px; width:22px; height:22px; line-height:0; border-radius:50%;
+  box-shadow:0 1px 4px rgba(0,0,0,.45); }
+.card-sp svg{ display:block; }
 .binfo{ padding:9px 11px 12px; }
 .btitle{ font-size:13.5px; font-weight:500; }
 .bauthor{ color:var(--muted); }
