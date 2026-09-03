@@ -1902,6 +1902,7 @@ function fmtCur(v){ return '€ ' + Number(v).toLocaleString('it-IT',{minimumFra
 
 function openObjDetail(catKey, id){
   const cat = catByKey(catKey); const o = objById(catKey, id); if(!o) return;
+  if(cat.musica) return openMusicDetail(o);   // i dischi hanno una scheda dedicata (stile Spotify)
   const f = o.fields;
   const kv = [], blocks = [];
   for(const fld of cat.campi){
@@ -1951,6 +1952,80 @@ function openObjDetail(catKey, id){
       ${cat.ai?`<button class="btn secondary" onclick="openAiCompila('${cat.key}','${id}')">🤖 Compila con AI</button>`:''}
       <button class="btn secondary" onclick="stampaScheda('${cat.key}','${id}')">🖨 Stampa scheda (PDF)</button>
       <button class="btn secondary" onclick="openObjForm('${cat.key}','${id}')">✏️ Modifica</button>
+      <button class="btn" onclick="closeModal()">Chiudi</button>
+    </div>`, true);
+}
+
+/* ---- scheda disco in stile "pagina Spotify" ---- */
+function _spHue(str){ let h=0; str=String(str||''); for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return h%360; }
+function _parseTracklist(txt){
+  if(!txt) return [];
+  return String(txt).split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(line=>{
+    let pos='', dur='', title=line;
+    const dm=line.match(/\(?\b(\d{1,2}:\d{2})\)?\s*$/); if(dm){ dur=dm[1]; title=line.slice(0,dm.index).replace(/[\(\-–—\s]+$/,'').trim(); }
+    const pm=title.match(/^([A-Z]?\d{1,2})[.\)\-–]\s*/); if(pm){ pos=pm[1]; title=title.slice(pm[0].length).trim(); }
+    return { pos, title, dur };
+  });
+}
+function openMusicDetail(o){
+  const cat=catByKey('musica'); const f=o.fields; const id=o.id;
+  const cov=coverSrc(cat,f);
+  const tip=f['Tipologia supporto']||'Album';
+  const tracks=_parseTracklist(f['Tracklist']);
+  const sub=[f['Artista'], f['Anno di rilascio'], tracks.length?tracks.length+' brani':'', f['Etichetta']].filter(Boolean);
+  const url=f['Spotify']; const emb=spEmbedFromUrl(url);
+  const hue=_spHue((f['Artista']||'')+'|'+(f['Titolo']||''));
+  const consBadge = f['Stato di conservazione']
+    ? `<span class="pill" style="background:${CONS_COLORS[f['Stato di conservazione']]||'var(--muted)'}">${esc(f['Stato di conservazione'])}</span>` : '';
+  // dati di catalogo secondari (tutto tranne ciò che è già nell'intestazione/tracklist)
+  const skip=new Set(['Titolo','Artista','Tipologia supporto','Anno di rilascio','Tracklist','Copertina','Stato di conservazione']);
+  const kv=[], blocks=[];
+  for(const fld of cat.campi){
+    if(skip.has(fld.k)) continue;
+    const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
+    if(fld.t==='area'){ blocks.push([fld.l,v]); continue; }
+    let disp=v; if(fld.t==='cur') disp=fmtCur(v); else if(fld.t==='date') disp=fmtDate(v);
+    kv.push([fld.l, disp]);
+  }
+  if((f['Collocazione']||[]).length) kv.push(['Collocazione', f['Collocazione'].map(collName).join(', ')]);
+  // biografia dell'artista collegato dall'archivio
+  let aid=(f[AUTORE_LINK]||[])[0];
+  if(!aid && f[cat.sub]){ const m=autori.find(a=>(a.fields['Nome']||'').toLowerCase()===String(f[cat.sub]).toLowerCase()); if(m) aid=m.id; }
+  const a=aid && autoreById(aid);
+  if(a){ const af=a.fields, date=[af['Nascita'],af['Morte']].filter(Boolean).join(' – ');
+    const testo=[[date,af['Nazionalità']].filter(Boolean).join(' · '), af['Biografia'], af['Note']?('Note: '+af['Note']):''].filter(Boolean).join('\n\n');
+    if(testo) blocks.push(['Artista — '+(af['Nome']||''), testo]); }
+
+  modal(`
+    <div class="sp-page" style="--sp-hue:${hue}">
+      <div class="sp-hero">
+        <div class="sp-hero-cov">${cov?`<img src="${esc(cov)}" onclick="lightbox('${esc(cov)}')" onerror="this.parentNode.classList.add('empty'); this.remove()">`:`<div class="sp-noimg">♪</div>`}</div>
+        <div class="sp-hero-info">
+          <div class="sp-kicker">${esc(tip)}</div>
+          <h1 class="sp-title">${esc(f['Titolo']||'—')}</h1>
+          <div class="sp-sub">${sub.map(x=>esc(String(x))).join(' · ')}</div>
+        </div>
+      </div>
+      <div class="sp-controls">
+        ${url ? `<a class="sp-play" href="${esc(url)}" target="_blank" rel="noopener" title="Apri su Spotify">▶</a>`
+              : `<button class="sp-find" onclick="spTrova('musica','${id}')">🎧 Trova su Spotify</button>`}
+        <div class="sp-controls-meta">${esc(codeStr(cat,f))}${f['Numero posizione']?' · pos. '+esc(String(f['Numero posizione'])):''} ${consBadge}</div>
+        ${url ? `<div class="sp-controls-links"><button onclick="spTrova('musica','${id}')">Cambia</button><button onclick="spScollega('musica','${id}')">Scollega</button></div>` : ''}
+      </div>
+      ${emb ? `<iframe class="sp-embed-full" src="${esc(emb)}" width="100%" height="152" frameborder="0" loading="lazy"
+                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>` : ''}
+      ${tracks.length ? `<div class="sp-tracks-wrap"><div class="sp-tracks-h">Tracce</div><ol class="sp-tracks">${
+          tracks.map((t,i)=>`<li><span class="sp-tnum">${esc(t.pos||String(i+1))}</span><span class="sp-ttit">${esc(t.title)}</span><span class="sp-tdur">${esc(t.dur||'')}</span></li>`).join('')
+        }</ol></div>` : ''}
+    </div>
+    ${kv.length ? `<div class="seclabel" style="margin-top:20px">Dettagli</div><div class="kv">${kv.map(([k,v])=>`<div class="kv-row"><span class="etichetta">${esc(k)}</span><span class="val">${esc(String(v))}</span></div>`).join('')}</div>` : ''}
+    ${blocks.length ? blocks.map(([k,v])=>`<div class="seclabel">${esc(k)}</div><p class="note" style="white-space:pre-wrap; text-align:justify; margin-bottom:10px">${esc(String(v))}</p>`).join('') : ''}
+    ${mediaSection(cat, o)}
+    <div class="modal-actions">
+      <button class="btn danger small left" onclick="delObj('musica','${id}')">Elimina</button>
+      ${cat.ai?`<button class="btn secondary" onclick="openAiCompila('musica','${id}')">🤖 Compila con AI</button>`:''}
+      <button class="btn secondary" onclick="stampaScheda('musica','${id}')">🖨 Stampa scheda (PDF)</button>
+      <button class="btn secondary" onclick="openObjForm('musica','${id}')">✏️ Modifica</button>
       <button class="btn" onclick="closeModal()">Chiudi</button>
     </div>`, true);
 }
