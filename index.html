@@ -2033,7 +2033,20 @@ function spPicker(catKey, id, items){
 }
 /* finestra d'errore persistente e copiabile (i toast sparivano troppo in fretta) */
 function spErrore(catKey, id, msg){
+  const m=String(msg||'');
+  const colonnaMancante = /PGRST204|schema cache|'?spotify'? column|column .*spotify/i.test(m);
+  const spiega = colonnaMancante
+    ? `<div class="note" style="background:var(--acc-velo); border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:8px">
+         <b>Manca la colonna «spotify» nel database (Supabase).</b><br>
+         Il collegamento non si può salvare finché non viene creata. Nel Table Editor di Supabase,
+         schema <code>catalogo</code>, tabella <code>supporti_musicali</code>, aggiungi una colonna
+         <code>spotify</code> di tipo <code>text</code> (oppure esegui:
+         <code>alter table catalogo.supporti_musicali add column if not exists spotify text;</code>).
+         Poi riprova. È l'unico passo mancante.
+       </div>`
+    : '';
   modal(`<h2>⚠️ Errore Spotify</h2>
+    ${spiega}
     <p class="note">Il salvataggio del collegamento non è riuscito. Messaggio completo (selezionabile):</p>
     <pre style="white-space:pre-wrap; user-select:text; background:var(--sup-quieta); border:1px solid var(--line); border-radius:8px; padding:10px; font-family:var(--f-mono); font-size:12px; max-height:40vh; overflow:auto">${esc(String(msg||'—'))}</pre>
     <div class="modal-actions">
