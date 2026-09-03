@@ -126,7 +126,7 @@ export const TABELLE = {
       'Stato di conservazione', 'Stato del supporto', 'Difetti e note',
       'Ambiente', 'Provenienza', 'Data acquisizione', 'Prezzo acquisto',
       'Valore stimato', 'Data stima', 'Note', 'Crediti', 'Quotazione',
-      'Copertina', 'Numero posizione'],
+      'Copertina', 'Numero posizione', 'Spotify'],
     links: {
       'Collocazione': { bridge: 'collocazioni__supporti_musicali', role: 'dst' },
       'Autore (archivio)': { bridge: 'supporti_musicali__autore_archivio', role: 'src' },
