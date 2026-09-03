@@ -1202,17 +1202,32 @@ function apriScaffaleVinili(){
   const fG=gv('mf-genere'), fA=gv('mf-autore');
   if(fG) items=items.filter(o=> String(o.fields['Genere musicale']||'').split(/\s*,\s*/).map(t=>t.trim()).includes(fG));
   if(fA) items=items.filter(o=> String(o.fields['Artista']||'')===fA);
-  items.sort((a,b)=>{ const A=(a.fields['Artista']||'zzz')+' '+(a.fields['Titolo']||''), B=(b.fields['Artista']||'zzz')+' '+(b.fields['Titolo']||''); return A.localeCompare(B,'it'); });
   if(!items.length){ toast('Nessun vinile trovato (Tipologia supporto = «Vinile»)'); return; }
-  _cf = { items, i:0 };
+  _cf = { all: items.slice(), items, i:0, sort:'artista' };
   const ov=document.createElement('div'); ov.id='cf-ov';
   ov.innerHTML=`
-    <button class="cf-close" title="Chiudi" onclick="chiudiScaffale()">✕</button>
-    <div class="cf-title">💿 Scaffale vinili · <span id="cf-n"></span></div>
+    <div class="cf-bar">
+      <span class="cf-title">💿 Scaffale vinili · <span id="cf-n"></span></span>
+      <label class="cf-sortlab">Ordina
+        <select id="cf-sort" onchange="cfSort(this.value)">
+          <option value="artista">Artista</option>
+          <option value="titolo">Titolo</option>
+          <option value="anno_asc">Anno ↑ (più vecchi)</option>
+          <option value="anno_desc">Anno ↓ (più recenti)</option>
+          <option value="etichetta">Etichetta</option>
+          <option value="genere">Genere</option>
+          <option value="codice">Codice catalogo</option>
+          <option value="recenti">Aggiunti di recente</option>
+        </select>
+      </label>
+      <button class="cf-icon" onclick="cfFullscreen()" title="Schermo intero">⛶</button>
+      <button class="cf-icon" onclick="chiudiScaffale()" title="Chiudi">✕</button>
+    </div>
     <div class="cf-stage" id="cf-stage"></div>
     <div class="cf-cap" id="cf-cap"></div>
     <div class="cf-hint">Scorri con la rotellina, le frecce ← →, o trascina · clic su un disco per portarlo al centro · clic al centro per aprire la scheda</div>`;
   document.body.appendChild(ov);
+  cfSort('artista');
   // interazioni
   ov.addEventListener('wheel', e=>{ e.preventDefault(); cfGo(e.deltaY>0||e.deltaX>0?1:-1); }, {passive:false});
   ov.addEventListener('click', e=>{ if(e.target===ov) chiudiScaffale(); });
@@ -1224,10 +1239,63 @@ function apriScaffaleVinili(){
   window.addEventListener('keydown', _cfKey=function(e){ if(!_cf) return; if(e.key==='ArrowRight'){cfGo(1);} else if(e.key==='ArrowLeft'){cfGo(-1);} else if(e.key==='Enter'){cfClick(_cf.i);} else if(e.key==='Escape'){chiudiScaffale();} });
   cfRender();
 }
-function chiudiScaffale(){ const ov=document.getElementById('cf-ov'); if(ov) ov.remove(); _cf=null;
-  window.removeEventListener('pointermove', _cfMove); window.removeEventListener('pointerup', _cfUp); window.removeEventListener('keydown', _cfKey); }
+function chiudiScaffale(){
+  try{ if(document.fullscreenElement) (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }catch(e){}
+  const ov=document.getElementById('cf-ov'); if(ov) ov.remove(); _cf=null;
+  window.removeEventListener('pointermove', _cfMove); window.removeEventListener('pointerup', _cfUp); window.removeEventListener('keydown', _cfKey);
+}
+function cfFullscreen(){
+  const ov=document.getElementById('cf-ov'); if(!ov) return;
+  try{ if(document.fullscreenElement||document.webkitFullscreenElement){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
+       else { (ov.requestFullscreen||ov.webkitRequestFullscreen||function(){}).call(ov); } }catch(e){}
+}
+function _cfSortFns(){
+  const anno=v=>{ const m=String(v||'').match(/\d{4}/); return m?+m[0]:null; };
+  const s=(a,b)=>String(a==null?'':a).localeCompare(String(b==null?'':b),'it',{numeric:true});
+  const perAnno=(dir)=>(a,b)=>{ const x=anno(a.fields['Anno di rilascio']), y=anno(b.fields['Anno di rilascio']); if(x==null&&y==null)return s(a.fields['Artista'],b.fields['Artista']); if(x==null)return 1; if(y==null)return -1; return dir*(x-y); };
+  return {
+    artista:(a,b)=> s((a.fields['Artista']||'zzz')+' '+(a.fields['Titolo']||''), (b.fields['Artista']||'zzz')+' '+(b.fields['Titolo']||'')),
+    titolo:(a,b)=> s(a.fields['Titolo'], b.fields['Titolo']),
+    anno_asc:perAnno(1), anno_desc:perAnno(-1),
+    etichetta:(a,b)=> s((a.fields['Etichetta']||'zzz')+' '+(a.fields['Artista']||''), (b.fields['Etichetta']||'zzz')+' '+(b.fields['Artista']||'')),
+    genere:(a,b)=> s((a.fields['Genere musicale']||'zzz')+' '+(a.fields['Artista']||''), (b.fields['Genere musicale']||'zzz')+' '+(b.fields['Artista']||'')),
+    codice:(a,b)=> (a.fields['Codice']||0)-(b.fields['Codice']||0),
+    recenti:(a,b)=> String(b.createdTime||'').localeCompare(String(a.createdTime||''))
+  };
+}
+function cfSort(key){
+  if(!_cf) return;
+  const fns=_cfSortFns(); const fn=fns[key]||fns.artista;
+  const centrato = _cf.items[_cf.i] ? _cf.items[_cf.i].id : null;   // prova a tenere lo stesso disco al centro
+  _cf.sort=key; _cf.items=_cf.all.slice().sort(fn);
+  const j = centrato ? _cf.items.findIndex(o=>o.id===centrato) : -1;
+  _cf.i = j>=0 ? j : 0;
+  cfRender();
+}
 function cfGo(delta){ if(!_cf) return; _cf.i=Math.max(0, Math.min(_cf.items.length-1, _cf.i+delta)); cfRender(); }
-function cfClick(idx){ if(!_cf) return; if(idx===_cf.i){ const o=_cf.items[idx]; chiudiScaffale(); openDetail('musica', o.id); } else { _cf.i=idx; cfRender(); } }
+function cfClick(idx){
+  if(!_cf) return;
+  if(idx===_cf.i){
+    const o=_cf.items[idx];
+    _cfReopen = { sort:_cf.sort, id:o.id };   // alla chiusura della scheda si torna al juke-box
+    chiudiScaffale();
+    openDetail('musica', o.id);
+    _cfWatchClose();
+  } else { _cf.i=idx; cfRender(); }
+}
+/* quando la scheda aperta dal juke-box viene chiusa, riapre il juke-box sullo stesso disco */
+function _cfWatchClose(){
+  const root=document.getElementById('modal-root'); if(!root || !window.MutationObserver) return;
+  const obs=new MutationObserver(()=>{
+    if(root.children.length!==0) return;   // modale ancora aperta (o sostituita, es. Modifica)
+    obs.disconnect();
+    const st=_cfReopen; _cfReopen=null; if(!st) return;
+    apriScaffaleVinili();
+    if(_cf){ cfSort(st.sort); const sel=document.getElementById('cf-sort'); if(sel) sel.value=st.sort;
+      const j=_cf.items.findIndex(o=>o.id===st.id); if(j>=0){ _cf.i=j; cfRender(); } }
+  });
+  obs.observe(root, {childList:true});
+}
 function cfRender(){
   const stage=document.getElementById('cf-stage'); if(!stage||!_cf) return;
   const cat=catByKey('musica'); const {items,i}=_cf;
@@ -1247,7 +1315,7 @@ function cfRender(){
     `<div class="cf-code">${esc(codeStr(cat,f))}</div><div class="cf-tit">${esc(f['Titolo']||'—')}</div><div class="cf-art">${esc(f['Artista']||'')}${f['Anno di rilascio']?' · '+esc(String(f['Anno di rilascio'])):''}</div>`;
   document.getElementById('cf-n').textContent = (i+1)+' / '+items.length;
 }
-let _cfMove=null, _cfUp=null, _cfKey=null;
+let _cfMove=null, _cfUp=null, _cfKey=null, _cfReopen=null;
 /* filtri specifici della numismatica: conservazione, rarità, Sheldon, metallo, autorità.
    Conservazione/rarità/Sheldon mantengono l'ordine della scala (non alfabetico). */
 function popolaFiltriNum(){
