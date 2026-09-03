@@ -2031,17 +2031,25 @@ function spPicker(catKey, id, items){
       <button class="btn secondary" style="margin-right:auto" onclick="openObjDetail('${catKey}','${id}')">← Annulla</button>
     </div>`, true);
 }
+/* finestra d'errore persistente e copiabile (i toast sparivano troppo in fretta) */
+function spErrore(catKey, id, msg){
+  modal(`<h2>⚠️ Errore Spotify</h2>
+    <p class="note">Il salvataggio del collegamento non è riuscito. Messaggio completo (selezionabile):</p>
+    <pre style="white-space:pre-wrap; user-select:text; background:var(--sup-quieta); border:1px solid var(--line); border-radius:8px; padding:10px; font-family:var(--f-mono); font-size:12px; max-height:40vh; overflow:auto">${esc(String(msg||'—'))}</pre>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="openObjDetail('${catKey}','${id}')">← Torna al disco</button>
+      <button class="btn" onclick="closeModal()">Chiudi</button>
+    </div>`, true);
+}
 async function spCollega(catKey, id, url){
   const cat=catByKey(catKey);
-  try{ const j=await updateRec(cat.tbl, id, {'Spotify': url}); patchRec(catKey, id, j); toast('Collegato a Spotify ✓'); }
-  catch(e){ toast('Salvataggio non riuscito: '+e.message); }
-  openObjDetail(catKey, id);
+  try{ const j=await updateRec(cat.tbl, id, {'Spotify': url}); patchRec(catKey, id, j); toast('Collegato a Spotify ✓'); openObjDetail(catKey, id); }
+  catch(e){ spErrore(catKey, id, e.message); }
 }
 async function spScollega(catKey, id){
   const cat=catByKey(catKey);
-  try{ const j=await updateRec(cat.tbl, id, {'Spotify': ''}); patchRec(catKey, id, j); toast('Scollegato'); }
-  catch(e){ toast('Errore: '+e.message); }
-  openObjDetail(catKey, id);
+  try{ const j=await updateRec(cat.tbl, id, {'Spotify': ''}); patchRec(catKey, id, j); toast('Scollegato'); openObjDetail(catKey, id); }
+  catch(e){ spErrore(catKey, id, e.message); }
 }
 /* --- abbinamento automatico di tutta la collezione --- */
 function _spNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'),'').replace(/[^a-z0-9]+/g,' ').trim(); }
