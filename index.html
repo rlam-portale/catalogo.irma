@@ -229,6 +229,7 @@
       <select id="mf-genere" onchange="renderCatalog()"><option value="">Genere: tutti</option></select>
       <select id="mf-autore" onchange="renderCatalog()"><option value="">Autore: tutti</option></select>
       <button class="btn secondary small" onclick="resetFiltriMusica()">↺ Azzera filtri</button>
+      <button class="btn secondary small" onclick="apriScaffaleVinili()">💿 Sfoglia vinili</button>
     </div>
     <div class="toolbar" id="num-filters" style="display:none">
       <select id="nf-cons" onchange="renderCatalog()"><option value="">Conservazione: tutte</option></select>
@@ -1189,6 +1190,65 @@ function resetFiltriMusica(){
   ['mf-supporto','mf-genere','mf-autore'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
   renderCatalog();
 }
+/* ===== "Sfoglia vinili": vista cover-flow tipo scaffale/juke-box lineare (solo vinili) ===== */
+let _cf = null;
+function apriScaffaleVinili(){
+  const cat = catByKey('musica');
+  let items = (objs.musica||[]).filter(o=> posseduto('musica', o.fields) && /vinil/i.test(String(o.fields['Tipologia supporto']||'')));
+  // rispetta la ricerca e i filtri musica attivi, se presenti
+  const q=(document.getElementById('q')||{}).value||''; const termini=q.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if(termini.length) items=items.filter(o=>{ const hay=testoCercabile(cat,o); return termini.every(t=>hay.includes(t)); });
+  const gv=id=>(document.getElementById(id)||{}).value||'';
+  const fG=gv('mf-genere'), fA=gv('mf-autore');
+  if(fG) items=items.filter(o=> String(o.fields['Genere musicale']||'').split(/\s*,\s*/).map(t=>t.trim()).includes(fG));
+  if(fA) items=items.filter(o=> String(o.fields['Artista']||'')===fA);
+  items.sort((a,b)=>{ const A=(a.fields['Artista']||'zzz')+' '+(a.fields['Titolo']||''), B=(b.fields['Artista']||'zzz')+' '+(b.fields['Titolo']||''); return A.localeCompare(B,'it'); });
+  if(!items.length){ toast('Nessun vinile trovato (Tipologia supporto = «Vinile»)'); return; }
+  _cf = { items, i:0 };
+  const ov=document.createElement('div'); ov.id='cf-ov';
+  ov.innerHTML=`
+    <button class="cf-close" title="Chiudi" onclick="chiudiScaffale()">✕</button>
+    <div class="cf-title">💿 Scaffale vinili · <span id="cf-n"></span></div>
+    <div class="cf-stage" id="cf-stage"></div>
+    <div class="cf-cap" id="cf-cap"></div>
+    <div class="cf-hint">Scorri con la rotellina, le frecce ← →, o trascina · clic su un disco per portarlo al centro · clic al centro per aprire la scheda</div>`;
+  document.body.appendChild(ov);
+  // interazioni
+  ov.addEventListener('wheel', e=>{ e.preventDefault(); cfGo(e.deltaY>0||e.deltaX>0?1:-1); }, {passive:false});
+  ov.addEventListener('click', e=>{ if(e.target===ov) chiudiScaffale(); });
+  let dragX=null, moved=0;
+  const stage=ov.querySelector('.cf-stage');
+  stage.addEventListener('pointerdown', e=>{ dragX=e.clientX; moved=0; });
+  window.addEventListener('pointermove', _cfMove=function(e){ if(dragX==null) return; const dx=e.clientX-dragX; if(Math.abs(dx)>55){ cfGo(dx<0?1:-1); dragX=e.clientX; moved+=1; } });
+  window.addEventListener('pointerup', _cfUp=function(){ dragX=null; });
+  window.addEventListener('keydown', _cfKey=function(e){ if(!_cf) return; if(e.key==='ArrowRight'){cfGo(1);} else if(e.key==='ArrowLeft'){cfGo(-1);} else if(e.key==='Enter'){cfClick(_cf.i);} else if(e.key==='Escape'){chiudiScaffale();} });
+  cfRender();
+}
+function chiudiScaffale(){ const ov=document.getElementById('cf-ov'); if(ov) ov.remove(); _cf=null;
+  window.removeEventListener('pointermove', _cfMove); window.removeEventListener('pointerup', _cfUp); window.removeEventListener('keydown', _cfKey); }
+function cfGo(delta){ if(!_cf) return; _cf.i=Math.max(0, Math.min(_cf.items.length-1, _cf.i+delta)); cfRender(); }
+function cfClick(idx){ if(!_cf) return; if(idx===_cf.i){ const o=_cf.items[idx]; chiudiScaffale(); openDetail('musica', o.id); } else { _cf.i=idx; cfRender(); } }
+function cfRender(){
+  const stage=document.getElementById('cf-stage'); if(!stage||!_cf) return;
+  const cat=catByKey('musica'); const {items,i}=_cf;
+  const gap=150, step=48;
+  stage.innerHTML = items.map((o,idx)=>{
+    const d=idx-i, abs=Math.abs(d); if(abs>7) return '';
+    const cov=coverSrc(cat, o.fields);
+    const tx = d===0?0 : (d<0? -(gap+(abs-1)*step) : (gap+(abs-1)*step));
+    const ry = d===0?0 : (d<0? 58 : -58);
+    const sc = d===0?1.12:0.82;
+    const tf = `translateX(${tx}px) translateZ(${d===0?60:0}px) rotateY(${ry}deg) scale(${sc})`;
+    const inner = cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
+                      : `<span>${esc(o.fields['Titolo']||'')}</span>`;
+    return `<div class="cf-card${cov?'':' noimg'}${d===0?' cf-active':''}" style="transform:${tf}; z-index:${100-abs}" onclick="cfClick(${idx})">${inner}</div>`;
+  }).join('');
+  const f=items[i].fields;
+  document.getElementById('cf-cap').innerHTML =
+    `<div class="cf-code">${esc(codeStr(cat,f))}</div><div class="cf-tit">${esc(f['Titolo']||'—')}</div><div class="cf-art">${esc(f['Artista']||'')}${f['Anno di rilascio']?' · '+esc(String(f['Anno di rilascio'])):''}</div>`;
+  document.getElementById('cf-n').textContent = (i+1)+' / '+items.length;
+}
+let _cfMove=null, _cfUp=null, _cfKey=null;
 /* filtri specifici della numismatica: conservazione, rarità, Sheldon, metallo, autorità.
    Conservazione/rarità/Sheldon mantengono l'ordine della scala (non alfabetico). */
 function popolaFiltriNum(){
