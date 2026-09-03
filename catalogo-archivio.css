@@ -404,9 +404,9 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 .cf-cap .cf-tit{ font-size:19px; font-weight:600; margin-top:2px; letter-spacing:-.01em; }
 .cf-cap .cf-art{ font-size:14px; color:#c9c0af; margin-top:2px; }
 /* pallino "su Spotify" sulla copertina + pulsante Ascolta nella didascalia */
-.cf-sp{ position:absolute; top:8px; right:8px; width:24px; height:24px; border-radius:50%;
-  background:#1db954; color:#0b0908; font-size:12px; display:flex; align-items:center; justify-content:center;
+.cf-sp{ position:absolute; top:8px; right:8px; width:24px; height:24px; line-height:0; border-radius:50%;
   box-shadow:0 2px 8px rgba(0,0,0,.5); z-index:3; }
+.cf-sp svg{ display:block; }
 .cf-play{ display:inline-block; margin-top:9px; padding:6px 14px; border-radius:999px; border:none; cursor:pointer;
   font-family:var(--f-ui); font-size:13px; font-weight:600; text-decoration:none;
   background:#1db954; color:#08120c; }

@@ -1342,7 +1342,7 @@ function cfRender(){
     const tf = `translateX(${tx}px) translateZ(${d===0?60:0}px) rotateY(${ry}deg)`;   // niente scale qui: lo gestisce .cf-face (per zoom hover + riflesso)
     const inner = cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
                       : `<span>${esc(o.fields['Titolo']||'')}</span>`;
-    const sp = o.fields['Spotify'] ? '<span class="cf-sp" title="Disponibile su Spotify">▶</span>' : '';
+    const sp = o.fields['Spotify'] ? `<span class="cf-sp" title="Disponibile su Spotify">${spLogo(24)}</span>` : '';
     return `<div class="cf-card${d===0?' cf-active':''}" style="transform:${tf}; z-index:${100-abs}" onclick="cfClick(${idx})"><div class="cf-face${cov?'':' noimg'}">${inner}</div>${sp}</div>`;
   }).join('');
   const f=items[i].fields;
