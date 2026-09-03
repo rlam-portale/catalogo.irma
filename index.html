@@ -2066,45 +2066,50 @@ function spotifyBlock(cat, o){
     <button class="btn secondary" onclick="spTrova('${cat.key}','${o.id}')">🎧 Trova su Spotify</button>
   </div>`;
 }
-/* cerca su Spotify e mostra i risultati da scegliere */
-async function spTrova(catKey, id){
-  const cat=catByKey(catKey), o=objById(catKey,id); if(!o) return; const f=o.fields;
-  toast('Cerco su Spotify…');
-  let items=[];
-  try{
-    let j = await spFetch(spQuery(f),'album');
-    items = (j.albums&&j.albums.items)||[];
-    if(!items.length){                                    // ripiego: testo libero
-      j = await spFetch([f['Artista'],f['Titolo']].filter(Boolean).join(' '),'album');
-      items = (j.albums&&j.albums.items)||[];
-    }
-  }catch(e){ toast('Spotify: '+e.message); return; }
-  if(!items.length){ toast('Nessun album trovato su Spotify per «'+(f['Artista']||f['Titolo']||'')+'»'); return; }
-  spPicker(catKey, id, items);
-}
-function spPicker(catKey, id, items){
-  const rows = items.map(al=>{
-    const img=((al.images&&(al.images[1]||al.images[0]))||{}).url||'';
-    const artists=(al.artists||[]).map(x=>x.name).join(', ');
-    const yr=String(al.release_date||'').slice(0,4);
-    const tot=al.total_tracks?al.total_tracks+' brani':'';
-    const tipo=al.album_type==='single'?'single':(al.album_type==='compilation'?'raccolta':'album');
-    const url=(al.external_urls&&al.external_urls.spotify)||('https://open.spotify.com/album/'+al.id);
-    return `<div class="sp-hit">
-      <div class="sp-hit-cov">${img?`<img src="${esc(img)}" loading="lazy">`:''}</div>
-      <div class="sp-hit-meta">
-        <div class="sp-hit-tit">${esc(al.name||'')}</div>
-        <div class="note">${esc(artists)}${yr?' · '+yr:''}${tot?' · '+tot:''} · ${esc(tipo)}</div>
-      </div>
-      <button class="btn small" onclick="spCollega('${catKey}','${id}','${esc(url)}')">Scegli</button>
-    </div>`;
-  }).join('');
+/* apre la finestra di abbinamento con campo di ricerca modificabile */
+function spTrova(catKey, id){
+  const o=objById(catKey,id); if(!o) return; const f=o.fields;
+  const q0=[f['Artista'], f['Titolo']].filter(Boolean).join(' ').trim();
   modal(`<h2>🎧 Abbina a Spotify</h2>
-    <p class="note">Scegli l'album che corrisponde al disco in catalogo.</p>
-    <div class="sp-hits">${rows}</div>
+    <p class="note">Cerca l'album e scegli quello giusto. Se non lo trova, <b>correggi il testo</b> (prova solo l'artista, o solo il titolo, o il titolo in inglese) e premi Cerca.</p>
+    <div class="sp-search">
+      <input id="sp-q" type="search" value="${esc(q0)}" placeholder="Artista e/o titolo…" autocomplete="off"
+        onkeydown="if(event.key==='Enter'){spRicerca('${catKey}','${id}',this.value); return false;}">
+      <button class="btn small" onclick="spRicerca('${catKey}','${id}',document.getElementById('sp-q').value)">🔎 Cerca</button>
+    </div>
+    <div id="sp-results" class="sp-hits"><p class="note">Cerco su Spotify…</p></div>
     <div class="modal-actions">
       <button class="btn secondary" style="margin-right:auto" onclick="openObjDetail('${catKey}','${id}')">← Annulla</button>
     </div>`, true);
+  const inp=document.getElementById('sp-q'); if(inp){ inp.focus(); inp.select(); }
+  spRicerca(catKey, id, q0);   // ricerca iniziale
+}
+function spHitRow(catKey, id, al){
+  const img=((al.images&&(al.images[1]||al.images[0]))||{}).url||'';
+  const artists=(al.artists||[]).map(x=>x.name).join(', ');
+  const yr=String(al.release_date||'').slice(0,4);
+  const tot=al.total_tracks?al.total_tracks+' brani':'';
+  const tipo=al.album_type==='single'?'single':(al.album_type==='compilation'?'raccolta':'album');
+  const url=(al.external_urls&&al.external_urls.spotify)||('https://open.spotify.com/album/'+al.id);
+  return `<div class="sp-hit">
+    <div class="sp-hit-cov">${img?`<img src="${esc(img)}" loading="lazy">`:''}</div>
+    <div class="sp-hit-meta">
+      <div class="sp-hit-tit">${esc(al.name||'')}</div>
+      <div class="note">${esc(artists)}${yr?' · '+yr:''}${tot?' · '+tot:''} · ${esc(tipo)}</div>
+    </div>
+    <button class="btn small" onclick="spCollega('${catKey}','${id}','${esc(url)}')">Scegli</button>
+  </div>`;
+}
+async function spRicerca(catKey, id, q){
+  const box=document.getElementById('sp-results'); if(!box) return;
+  q=String(q||'').trim();
+  if(!q){ box.innerHTML='<p class="note">Scrivi artista e/o titolo, poi premi Cerca.</p>'; return; }
+  box.innerHTML='<p class="note">Cerco su Spotify…</p>';
+  let items=[];
+  try{ const j=await spFetch(q,'album',12); items=(j.albums&&j.albums.items)||[]; }
+  catch(e){ box.innerHTML='<p class="note" style="color:var(--amber)">Errore Spotify: '+esc(e.message)+'</p>'; return; }
+  if(!items.length){ box.innerHTML='<p class="note">Nessun risultato per «'+esc(q)+'». Prova a cambiare le parole: solo l\'artista, solo il titolo, oppure il titolo in inglese.</p>'; return; }
+  box.innerHTML = items.map(al=>spHitRow(catKey,id,al)).join('');
 }
 /* finestra d'errore persistente e copiabile (i toast sparivano troppo in fretta) */
 function spErrore(catKey, id, msg){
