@@ -230,6 +230,7 @@
       <select id="mf-autore" onchange="renderCatalog()"><option value="">Autore: tutti</option></select>
       <button class="btn secondary small" onclick="resetFiltriMusica()">↺ Azzera filtri</button>
       <button class="btn secondary small" onclick="apriScaffaleVinili()">💿 Sfoglia vinili</button>
+      <button class="btn secondary small" onclick="spCollegaTutti()">🎧 Collega a Spotify</button>
     </div>
     <div class="toolbar" id="num-filters" style="display:none">
       <select id="nf-cons" onchange="renderCatalog()"><option value="">Conservazione: tutte</option></select>
@@ -655,6 +656,14 @@ async function api(path, opts={}, retry=0){
 /* chiamata al proxy Discogs (token lato server) */
 async function dgFetch(pathq){
   return fetch('/api/discogs?p=' + encodeURIComponent(pathq), { headers:{ 'x-app-password': appPw() } });
+}
+/* ricerca su Spotify via proxy (credenziali lato server) */
+async function spFetch(q, type='album', limit=8){
+  const res = await fetch('/api/spotify?type='+encodeURIComponent(type)+'&limit='+limit+'&q='+encodeURIComponent(q), { headers:{ 'x-app-password': appPw() } });
+  if(res.status===401){ chiediPassword(); throw new Error('password non valida'); }
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status)); }
+  return j;
 }
 /* upload di un allegato via proxy (content.airtable.com) */
 async function proxyUpload(recordId, field, contentType, fileB64, filename){
@@ -1331,11 +1340,15 @@ function cfRender(){
     const tf = `translateX(${tx}px) translateZ(${d===0?60:0}px) rotateY(${ry}deg)`;   // niente scale qui: lo gestisce .cf-face (per zoom hover + riflesso)
     const inner = cov ? `<img src="${esc(cov)}" loading="lazy" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
                       : `<span>${esc(o.fields['Titolo']||'')}</span>`;
-    return `<div class="cf-card${d===0?' cf-active':''}" style="transform:${tf}; z-index:${100-abs}" onclick="cfClick(${idx})"><div class="cf-face${cov?'':' noimg'}">${inner}</div></div>`;
+    const sp = o.fields['Spotify'] ? '<span class="cf-sp" title="Disponibile su Spotify">▶</span>' : '';
+    return `<div class="cf-card${d===0?' cf-active':''}" style="transform:${tf}; z-index:${100-abs}" onclick="cfClick(${idx})"><div class="cf-face${cov?'':' noimg'}">${inner}</div>${sp}</div>`;
   }).join('');
   const f=items[i].fields;
   document.getElementById('cf-cap').innerHTML =
-    `<div class="cf-code">${esc(codeStr(cat,f))}</div><div class="cf-tit">${esc(f['Titolo']||'—')}</div><div class="cf-art">${esc(f['Artista']||'')}${f['Anno di rilascio']?' · '+esc(String(f['Anno di rilascio'])):''}</div>`;
+    `<div class="cf-code">${esc(codeStr(cat,f))}</div><div class="cf-tit">${esc(f['Titolo']||'—')}</div><div class="cf-art">${esc(f['Artista']||'')}${f['Anno di rilascio']?' · '+esc(String(f['Anno di rilascio'])):''}</div>`
+    + (f['Spotify']
+        ? `<a class="cf-play" href="${esc(f['Spotify'])}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🎧 Ascolta su Spotify</a>`
+        : `<button class="cf-play cf-play-off" onclick="event.stopPropagation(); cfClick(_cf.i)">＋ Collega a Spotify</button>`);
   document.getElementById('cf-n').textContent = (i+1)+' / '+items.length;
 }
 let _cfMove=null, _cfUp=null, _cfKey=null, _cfReopen=null;
@@ -1932,6 +1945,7 @@ function openObjDetail(catKey, id){
     </div>
     ${blocks.length?`<div style="margin-top:10px">${blocks.map(([k,v])=>`<div class="seclabel">${esc(k)}</div><p class="note" style="white-space:pre-wrap; text-align:justify; margin-bottom:10px">${esc(String(v))}</p>`).join('')}</div>`:''}
     ${mediaSection(cat, o)}
+    ${spotifyBlock(cat, o)}
     <div class="modal-actions">
       <button class="btn danger small left" onclick="delObj('${cat.key}','${id}')">Elimina</button>
       ${cat.ai?`<button class="btn secondary" onclick="openAiCompila('${cat.key}','${id}')">🤖 Compila con AI</button>`:''}
@@ -1939,6 +1953,138 @@ function openObjDetail(catKey, id){
       <button class="btn secondary" onclick="openObjForm('${cat.key}','${id}')">✏️ Modifica</button>
       <button class="btn" onclick="closeModal()">Chiudi</button>
     </div>`, true);
+}
+
+/* ================== SPOTIFY (streaming dei dischi) ================== */
+/* ricava l'URL del player integrato dall'URL/URI salvato */
+function spEmbedFromUrl(u){
+  const m = String(u||'').match(/(?:open\.spotify\.com\/(?:intl-[a-z-]+\/)?|spotify:)(album|track|playlist)[\/:]([A-Za-z0-9]+)/);
+  return m ? `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` : '';
+}
+/* query di ricerca a partire dai campi del disco */
+function spQuery(f){
+  const t=String(f['Titolo']||'').trim(), a=String(f['Artista']||'').trim();
+  if(t && a) return `album:"${t}" artist:"${a}"`;
+  return [a,t].filter(Boolean).join(' ');
+}
+/* blocco mostrato nella scheda dettaglio (solo supporti musicali) */
+function spotifyBlock(cat, o){
+  if(!cat.musica) return '';
+  const url = o.fields['Spotify'];
+  const emb = spEmbedFromUrl(url);
+  if(emb){
+    return `<div class="sp-block">
+      <div class="seclabel">🎧 Ascolta su Spotify</div>
+      <iframe class="sp-embed" src="${esc(emb)}" width="100%" height="352" frameborder="0" loading="lazy"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
+      <div class="sp-actions">
+        <a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">↗ Apri nell'app Spotify</a>
+        <button class="btn secondary small" onclick="spTrova('${cat.key}','${o.id}')">↻ Cambia abbinamento</button>
+        <button class="btn secondary small" onclick="spScollega('${cat.key}','${o.id}')">✕ Scollega</button>
+      </div>
+      <p class="note" style="margin-top:6px">Con un account Spotify collegato nel browser (tu hai Premium) partono i brani interi; altrimenti anteprime di ~30 secondi.</p>
+    </div>`;
+  }
+  return `<div class="sp-block">
+    <div class="seclabel">🎧 Spotify</div>
+    <p class="note">Nessun album Spotify collegato a questo disco.</p>
+    <button class="btn secondary" onclick="spTrova('${cat.key}','${o.id}')">🎧 Trova su Spotify</button>
+  </div>`;
+}
+/* cerca su Spotify e mostra i risultati da scegliere */
+async function spTrova(catKey, id){
+  const cat=catByKey(catKey), o=objById(catKey,id); if(!o) return; const f=o.fields;
+  toast('Cerco su Spotify…');
+  let items=[];
+  try{
+    let j = await spFetch(spQuery(f),'album');
+    items = (j.albums&&j.albums.items)||[];
+    if(!items.length){                                    // ripiego: testo libero
+      j = await spFetch([f['Artista'],f['Titolo']].filter(Boolean).join(' '),'album');
+      items = (j.albums&&j.albums.items)||[];
+    }
+  }catch(e){ toast('Spotify: '+e.message); return; }
+  if(!items.length){ toast('Nessun album trovato su Spotify per «'+(f['Artista']||f['Titolo']||'')+'»'); return; }
+  spPicker(catKey, id, items);
+}
+function spPicker(catKey, id, items){
+  const rows = items.map(al=>{
+    const img=((al.images&&(al.images[1]||al.images[0]))||{}).url||'';
+    const artists=(al.artists||[]).map(x=>x.name).join(', ');
+    const yr=String(al.release_date||'').slice(0,4);
+    const tot=al.total_tracks?al.total_tracks+' brani':'';
+    const tipo=al.album_type==='single'?'single':(al.album_type==='compilation'?'raccolta':'album');
+    const url=(al.external_urls&&al.external_urls.spotify)||('https://open.spotify.com/album/'+al.id);
+    return `<div class="sp-hit">
+      <div class="sp-hit-cov">${img?`<img src="${esc(img)}" loading="lazy">`:''}</div>
+      <div class="sp-hit-meta">
+        <div class="sp-hit-tit">${esc(al.name||'')}</div>
+        <div class="note">${esc(artists)}${yr?' · '+yr:''}${tot?' · '+tot:''} · ${esc(tipo)}</div>
+      </div>
+      <button class="btn small" onclick="spCollega('${catKey}','${id}','${esc(url)}')">Scegli</button>
+    </div>`;
+  }).join('');
+  modal(`<h2>🎧 Abbina a Spotify</h2>
+    <p class="note">Scegli l'album che corrisponde al disco in catalogo.</p>
+    <div class="sp-hits">${rows}</div>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="openObjDetail('${catKey}','${id}')">← Annulla</button>
+    </div>`, true);
+}
+async function spCollega(catKey, id, url){
+  const cat=catByKey(catKey);
+  try{ const j=await updateRec(cat.tbl, id, {'Spotify': url}); patchRec(catKey, id, j); toast('Collegato a Spotify ✓'); }
+  catch(e){ toast('Salvataggio non riuscito: '+e.message); }
+  openObjDetail(catKey, id);
+}
+async function spScollega(catKey, id){
+  const cat=catByKey(catKey);
+  try{ const j=await updateRec(cat.tbl, id, {'Spotify': ''}); patchRec(catKey, id, j); toast('Scollegato'); }
+  catch(e){ toast('Errore: '+e.message); }
+  openObjDetail(catKey, id);
+}
+/* --- abbinamento automatico di tutta la collezione --- */
+function _spNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'),'').replace(/[^a-z0-9]+/g,' ').trim(); }
+function spScore(al, f){
+  const at=_spNorm(f['Artista']), ti=_spNorm(f['Titolo']);
+  const alArt=_spNorm((al.artists||[]).map(x=>x.name).join(' ')), alTit=_spNorm(al.name);
+  let s=0;
+  if(at && alArt && (alArt.includes(at)||at.includes(alArt))) s+=2;
+  if(ti && alTit && (alTit.includes(ti)||ti.includes(alTit))) s+=2;
+  else if(ti && alTit){ const A=new Set(ti.split(' ')), B=alTit.split(' '); const common=B.filter(w=>A.has(w)).length; if(common>=2 || (common>=1 && A.size<=2)) s+=1; }
+  return s;
+}
+async function spCollegaTutti(){
+  const cat=catByKey('musica');
+  const list=(objs.musica||[]).filter(o=> posseduto('musica',o.fields) && !o.fields['Spotify']);
+  if(!list.length){ toast('Tutti i dischi risultano già collegati (o nessun disco da collegare).'); return; }
+  if(!confirm('Cerco su Spotify e collego automaticamente i '+list.length+' dischi senza abbinamento.\nGli abbinamenti sicuri (artista+titolo) vengono salvati; i casi incerti restano da fare a mano dalla singola scheda.\n\nProcedo?')) return;
+  let ok=0, ko=0, i=0;
+  modal(`<h2>🎧 Collegamento automatico a Spotify</h2>
+    <div id="sp-prog" class="note">Avvio…</div>
+    <div class="modal-actions"><button class="btn secondary" onclick="_spStop=true" id="sp-stopbtn">Ferma</button></div>`, true);
+  window._spStop=false;
+  const prog=(done)=>{ const el=document.getElementById('sp-prog'); if(!el) return;
+    el.innerHTML = done ? `Fatto: <b>${ok}</b> collegati, <b>${ko}</b> da abbinare a mano (su ${list.length}).<br><span class="note">Apri i singoli dischi per correggere o completare gli abbinamenti mancanti.</span>`
+                       : `Elaborati <b>${i}/${list.length}</b> · collegati ${ok} · da rivedere ${ko}`; };
+  for(const o of list){
+    if(window._spStop) break;
+    i++;
+    try{
+      let j = await spFetch(spQuery(o.fields),'album');
+      let items=(j.albums&&j.albums.items)||[];
+      if(!items.length){ j=await spFetch([o.fields['Artista'],o.fields['Titolo']].filter(Boolean).join(' '),'album'); items=(j.albums&&j.albums.items)||[]; }
+      const best=items.map(al=>({al,s:spScore(al,o.fields)})).sort((a,b)=>b.s-a.s)[0];
+      if(best && best.s>=3){
+        const al=best.al, url=(al.external_urls&&al.external_urls.spotify)||('https://open.spotify.com/album/'+al.id);
+        const upd=await updateRec(cat.tbl,o.id,{'Spotify':url}); patchRec('musica',o.id,upd); ok++;
+      } else ko++;
+    }catch(e){ ko++; }
+    prog(false);
+    await new Promise(r=>setTimeout(r,220));
+  }
+  const sb=document.getElementById('sp-stopbtn'); if(sb){ sb.textContent='Chiudi'; sb.setAttribute('onclick','closeModal()'); }
+  prog(true);
 }
 
 /* ================== CATALOGAZIONE ASSISTITA DALL'AI ================== */
