@@ -349,26 +349,30 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 .cf-close{ position:absolute; top:12px; right:14px; width:36px; height:36px; border:none; border-radius:50%;
   background:rgba(255,255,255,.12); color:#fff; font-size:16px; cursor:pointer; }
 .cf-close:hover{ background:rgba(255,255,255,.22); }
-.cf-stage{ position:relative; width:100%; height:58vh; perspective:1300px; }
-.cf-card{ position:absolute; left:50%; top:50%; width:260px; height:260px; margin:-130px 0 0 -130px;
-  border-radius:5px; overflow:hidden; cursor:pointer; background:#111;
-  box-shadow:0 18px 40px rgba(0,0,0,.55); transition:transform .38s cubic-bezier(.22,.61,.36,1), box-shadow .38s;
-  transform-origin:center center; }
-.cf-card img{ width:100%; height:100%; object-fit:cover; display:block; }
-.cf-card.noimg{ display:flex; align-items:center; justify-content:center; padding:14px; text-align:center;
+.cf-stage{ position:relative; width:100%; height:62vh; perspective:1300px; }
+/* la card porta il posizionamento 3D (transform inline); lo scale e il riflesso stanno su .cf-face */
+.cf-card{ position:absolute; left:50%; top:44%; width:250px; height:250px; margin:-125px 0 0 -125px;
+  cursor:pointer; transition:transform .38s cubic-bezier(.22,.61,.36,1); transform-origin:center center; }
+.cf-face{ width:100%; height:100%; border-radius:5px; overflow:hidden; background:#111; transform:scale(.82);
+  box-shadow:0 16px 36px rgba(0,0,0,.55); transition:transform .3s ease, box-shadow .3s;
+  -webkit-box-reflect:below 3px linear-gradient(transparent 58%, rgba(255,255,255,.28)); }
+.cf-face img{ width:100%; height:100%; object-fit:cover; display:block; }
+.cf-face.noimg{ display:flex; align-items:center; justify-content:center; padding:14px; text-align:center;
   background:linear-gradient(135deg,#3a352d,#1c1813); color:#d8cfbd; font-family:var(--f-ui); font-size:13px; }
-.cf-card.cf-active{ box-shadow:0 26px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08); }
+.cf-card.cf-active .cf-face{ transform:scale(1.12); box-shadow:0 26px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08); }
+/* zoomata al passaggio del puntatore */
+.cf-card:hover .cf-face{ transform:scale(1.22); box-shadow:0 30px 70px rgba(0,0,0,.75); }
 /* disco che sbuca dietro la copertina al centro */
-.cf-card.cf-active::after{ content:""; position:absolute; right:-34%; top:8%; width:84%; height:84%; border-radius:50%;
+.cf-card.cf-active::after{ content:""; position:absolute; right:-30%; top:10%; width:80%; height:80%; border-radius:50%;
   background:repeating-radial-gradient(circle at 50% 50%, #0e0e0e 0 2px, #1b1b1b 2px 4px); z-index:-1;
   box-shadow:inset 0 0 0 22% #050505; }
-.cf-cap{ text-align:center; color:#efe8da; margin-top:8px; max-width:80vw; }
+.cf-cap{ text-align:center; color:#efe8da; margin-top:0; max-width:80vw; }
 .cf-cap .cf-code{ font-family:var(--f-mono); font-size:12px; color:#b6ad9c; letter-spacing:.04em; }
 .cf-cap .cf-tit{ font-size:19px; font-weight:600; margin-top:2px; letter-spacing:-.01em; }
 .cf-cap .cf-art{ font-size:14px; color:#c9c0af; margin-top:2px; }
 .cf-hint{ position:absolute; bottom:14px; left:0; right:0; text-align:center; color:#9c937f; font-size:11.5px; padding:0 16px; }
 @media (max-width:640px){
-  .cf-card{ width:190px; height:190px; margin:-95px 0 0 -95px; }
+  .cf-card{ width:180px; height:180px; margin:-90px 0 0 -90px; }
   .cf-cap .cf-tit{ font-size:16px; }
 }
-@media (prefers-reduced-motion: reduce){ .cf-card{ transition:none; } }
+@media (prefers-reduced-motion: reduce){ .cf-card, .cf-face{ transition:none; } }
