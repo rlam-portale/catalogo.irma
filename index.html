@@ -2115,13 +2115,13 @@ async function spRicerca(catKey, id, q){
   if(w.length>8) tentativi.push(w.slice(0,8).join(' '));
   if(w.length>5) tentativi.push(w.slice(0,5).join(' '));
   if(w.length>3) tentativi.push(w.slice(0,3).join(' '));
-  let items=null, lastErr='';
+  let items=[], hadSuccess=false, lastErr='';
   for(const t of tentativi){
-    try{ const j=await spFetch(t,'album',12); items=(j.albums&&j.albums.items)||[]; if(items.length) break; }
-    catch(e){ lastErr=e.message; items=items||[]; }
+    try{ const j=await spFetch(t,'album'); items=(j.albums&&j.albums.items)||[]; hadSuccess=true; if(items.length) break; }
+    catch(e){ lastErr=e.message; }
   }
-  if(items && items.length){ box.innerHTML = items.map(al=>spHitRow(catKey,id,al)).join(''); return; }
-  if(lastErr && items===null){ box.innerHTML='<p class="note" style="color:var(--amber)">Errore Spotify: '+esc(lastErr)+'</p>'; return; }
+  if(items.length){ box.innerHTML = items.map(al=>spHitRow(catKey,id,al)).join(''); return; }
+  if(!hadSuccess && lastErr){ box.innerHTML='<p class="note" style="color:var(--amber)">Errore Spotify: '+esc(lastErr)+'</p>'; return; }
   box.innerHTML='<p class="note">Nessun risultato per «'+esc(q)+'». Prova a semplificare: solo l\'artista, solo il titolo, oppure il titolo in inglese.</p>';
 }
 /* finestra d'errore persistente e copiabile (i toast sparivano troppo in fretta) */
@@ -2181,7 +2181,7 @@ async function _spCercaAlbum(f){
   if(a) tentativi.push(_spClean(a));
   for(const q of tentativi){
     if(!q) continue;
-    try{ const j=await spFetch(q,'album',12); const items=(j.albums&&j.albums.items)||[]; if(items.length) return items; }
+    try{ const j=await spFetch(q,'album'); const items=(j.albums&&j.albums.items)||[]; if(items.length) return items; }
     catch(e){ /* passa al tentativo successivo */ }
   }
   return [];
