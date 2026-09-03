@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- una cassa di dischi: dorsi di copertine in colori caldi/teal, poi banda scura del divisorio -->
+    <pattern id="cassa" width="78" height="168" patternUnits="userSpaceOnUse">
+      <rect width="78" height="168" fill="#241f19"/>
+      <!-- dorsi -->
+      <rect x="2"  y="6" width="8"  height="132" fill="#7a4a2e"/>
+      <rect x="11" y="4" width="6"  height="134" fill="#cdbb8c"/>
+      <rect x="18" y="8" width="9"  height="130" fill="#356b6b"/>
+      <rect x="28" y="5" width="5"  height="133" fill="#8a2f38"/>
+      <rect x="34" y="7" width="8"  height="131" fill="#c79a3f"/>
+      <rect x="43" y="4" width="6"  height="134" fill="#3a4d63"/>
+      <rect x="50" y="9" width="9"  height="129" fill="#6b4a5c"/>
+      <rect x="60" y="5" width="7"  height="133" fill="#9c6b3a"/>
+      <rect x="68" y="6" width="8"  height="132" fill="#4f6b4a"/>
+      <!-- luce sul bordo sinistro di alcuni dorsi -->
+      <g fill="#ffffff" opacity="0.14">
+        <rect x="2"  y="6" width="1.4" height="132"/>
+        <rect x="18" y="8" width="1.4" height="130"/>
+        <rect x="34" y="7" width="1.4" height="131"/>
+        <rect x="50" y="9" width="1.4" height="129"/>
+        <rect x="68" y="6" width="1.4" height="132"/>
+      </g>
+      <!-- ombra in basso tra i dorsi e il divisorio -->
+      <rect x="0" y="132" width="78" height="8" fill="#000000" opacity="0.35"/>
+      <!-- divisorio della cassa (legno scuro) -->
+      <rect x="0" y="140" width="78" height="28" fill="#17120d"/>
+      <rect x="0" y="140" width="78" height="2"  fill="#3a2c1e" opacity="0.8"/>
+    </pattern>
+    <linearGradient id="luceAlto" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#ffe9c4" stop-opacity="0.10"/>
+      <stop offset="0.4" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="vign" cx="50%" cy="34%" r="80%">
+      <stop offset="0.45" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1"    stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
+    <linearGradient id="tinta" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e6b6b" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#c9772e" stop-opacity="0.12"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="900" fill="#14110d"/>
+  <!-- le file di casse (con leggero sfalsamento orizzontale riga per riga) -->
+  <g>
+    <rect x="-20" y="24"  width="1440" height="168" fill="url(#cassa)"/>
+    <rect x="-52" y="192" width="1472" height="168" fill="url(#cassa)"/>
+    <rect x="-16" y="360" width="1440" height="168" fill="url(#cassa)"/>
+    <rect x="-60" y="528" width="1480" height="168" fill="url(#cassa)"/>
+    <rect x="-24" y="696" width="1440" height="168" fill="url(#cassa)"/>
+  </g>
+  <rect width="1400" height="900" fill="url(#tinta)"/>
+  <rect width="1400" height="900" fill="url(#luceAlto)"/>
+  <rect width="1400" height="900" fill="url(#vign)"/>
+</svg>

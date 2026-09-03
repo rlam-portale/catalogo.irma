@@ -1208,6 +1208,11 @@ function apriScaffaleVinili(){
   ov.innerHTML=`
     <div class="cf-bar">
       <span class="cf-title">💿 Scaffale vinili · <span id="cf-n"></span></span>
+      <span class="cf-find">
+        <input id="cf-find-in" type="search" inputmode="numeric" placeholder="N. catalogo…" autocomplete="off"
+          onkeydown="if(event.key==='Enter'){cfVai(this.value); return false;}">
+        <button class="cf-icon" onclick="cfVai(document.getElementById('cf-find-in').value)" title="Vai al disco">→</button>
+      </span>
       <label class="cf-sortlab">Ordina
         <select id="cf-sort" onchange="cfSort(this.value)">
           <option value="artista">Artista</option>
@@ -1236,7 +1241,7 @@ function apriScaffaleVinili(){
   stage.addEventListener('pointerdown', e=>{ dragX=e.clientX; moved=0; });
   window.addEventListener('pointermove', _cfMove=function(e){ if(dragX==null) return; const dx=e.clientX-dragX; if(Math.abs(dx)>55){ cfGo(dx<0?1:-1); dragX=e.clientX; moved+=1; } });
   window.addEventListener('pointerup', _cfUp=function(){ dragX=null; });
-  window.addEventListener('keydown', _cfKey=function(e){ if(!_cf) return; if(e.key==='ArrowRight'){cfGo(1);} else if(e.key==='ArrowLeft'){cfGo(-1);} else if(e.key==='Enter'){cfClick(_cf.i);} else if(e.key==='Escape'){chiudiScaffale();} });
+  window.addEventListener('keydown', _cfKey=function(e){ if(!_cf) return; if(/^(INPUT|SELECT|TEXTAREA)$/.test((e.target||{}).tagName)) return; if(e.key==='ArrowRight'){cfGo(1);} else if(e.key==='ArrowLeft'){cfGo(-1);} else if(e.key==='Enter'){cfClick(_cf.i);} else if(e.key==='Escape'){chiudiScaffale();} });
   cfRender();
 }
 function chiudiScaffale(){
@@ -1273,6 +1278,24 @@ function cfSort(key){
   cfRender();
 }
 function cfGo(delta){ if(!_cf) return; _cf.i=Math.max(0, Math.min(_cf.items.length-1, _cf.i+delta)); cfRender(); }
+/* salto mirato: numero di posizione catalogo (o codice/titolo/artista) */
+function cfVai(val){
+  if(!_cf) return;
+  const q=String(val||'').trim(); if(!q){ return; }
+  const cat=catByKey('musica');
+  let j=-1;
+  const num=(q.match(/\d+/)||[])[0];
+  if(num!=null){ const n=+num; j=_cf.items.findIndex(o=> (+o.fields['Codice'])===n); }           // 1) numero di catalogo esatto
+  if(j<0){ const ql=q.toLowerCase();
+    j=_cf.items.findIndex(o=> codeStr(cat,o.fields).toLowerCase()===ql);                          // 2) codice completo (es. MUS-012)
+    if(j<0) j=_cf.items.findIndex(o=> codeStr(cat,o.fields).toLowerCase().includes(ql)); }
+  if(j<0){ const ql=q.toLowerCase();
+    j=_cf.items.findIndex(o=> String(o.fields['Titolo']||'').toLowerCase().includes(ql)
+                           || String(o.fields['Artista']||'').toLowerCase().includes(ql)); }      // 3) titolo/artista
+  if(j<0){ toast('Nessun disco per «'+q+'»'); return; }
+  _cf.i=j; cfRender();
+  const stage=document.getElementById('cf-stage'); if(stage){ const act=stage.querySelector('.cf-card.cf-active'); if(act){ act.classList.add('cf-flash'); setTimeout(()=>act.classList.remove('cf-flash'),950); } }
+}
 function cfClick(idx){
   if(!_cf) return;
   if(idx===_cf.i){

@@ -342,14 +342,24 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 
 /* ===== "Sfoglia vinili": cover-flow a tutto schermo (juke-box lineare) ===== */
 #cf-ov{ position:fixed; inset:0; z-index:500; overflow:hidden; user-select:none;
-  background:radial-gradient(120% 90% at 50% 25%, #2a2723 0%, #16130f 60%, #0b0908 100%);
+  /* velo scuro (leggibilità copertine) sopra la foto delle casse di vinili */
+  background:
+    radial-gradient(120% 90% at 50% 22%, rgba(24,20,15,.62) 0%, rgba(14,11,9,.82) 55%, rgba(7,5,4,.94) 100%),
+    url("vinili-sfondo.svg") center/cover no-repeat,
+    #0b0908;
   display:flex; flex-direction:column; align-items:center; justify-content:center; }
 /* barra superiore: titolo + conteggio, ordinamento, schermo intero, chiudi */
 .cf-bar{ position:absolute; top:0; left:0; right:0; z-index:2; display:flex; align-items:center; gap:12px;
   padding:12px 16px; background:linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,0)); }
 .cf-title{ color:#e9e2d4; font-size:14px; letter-spacing:.02em; opacity:.92; white-space:nowrap; }
 .cf-title #cf-n{ font-family:var(--f-mono); color:#b6ad9c; }
-.cf-sortlab{ margin-left:auto; display:inline-flex; align-items:center; gap:7px;
+/* ricerca mirata per numero/codice */
+.cf-find{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; }
+.cf-find input{ width:120px; background:rgba(255,255,255,.10); color:#f2ece0; border:1px solid rgba(255,255,255,.18);
+  border-radius:7px; padding:5px 9px; font-family:var(--f-ui); font-size:13px; }
+.cf-find input::placeholder{ color:#a99f8c; }
+.cf-find input:focus{ outline:none; border-color:var(--accent); background:rgba(255,255,255,.16); }
+.cf-sortlab{ display:inline-flex; align-items:center; gap:7px;
   color:#c9c0af; font-size:12px; letter-spacing:.02em; }
 .cf-sortlab select{ background:rgba(255,255,255,.10); color:#f2ece0; border:1px solid rgba(255,255,255,.18);
   border-radius:7px; padding:5px 26px 5px 9px; font-family:var(--f-ui); font-size:13px; cursor:pointer;
@@ -375,6 +385,10 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 .cf-face.noimg{ display:flex; align-items:center; justify-content:center; padding:14px; text-align:center;
   background:linear-gradient(135deg,#3a352d,#1c1813); color:#d8cfbd; font-family:var(--f-ui); font-size:13px; }
 .cf-card.cf-active .cf-face{ transform:scale(1.12); box-shadow:0 26px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08); }
+/* lampeggìo di conferma quando si salta a un disco cercato */
+.cf-card.cf-flash .cf-face{ animation:cfFlash .95s ease; }
+@keyframes cfFlash{ 0%,100%{ box-shadow:0 26px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08); }
+  25%,60%{ box-shadow:0 26px 60px rgba(0,0,0,.7), 0 0 0 4px var(--accent), 0 0 26px 4px rgba(15,110,86,.6); } }
 /* zoomata al passaggio del puntatore */
 .cf-card:hover .cf-face{ transform:scale(1.22); box-shadow:0 30px 70px rgba(0,0,0,.75); }
 /* disco che sbuca dietro la copertina al centro */
@@ -390,4 +404,4 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
   .cf-card{ width:180px; height:180px; margin:-90px 0 0 -90px; }
   .cf-cap .cf-tit{ font-size:16px; }
 }
-@media (prefers-reduced-motion: reduce){ .cf-card, .cf-face{ transition:none; } }
+@media (prefers-reduced-motion: reduce){ .cf-card, .cf-face{ transition:none; } .cf-card.cf-flash .cf-face{ animation:none; } }
