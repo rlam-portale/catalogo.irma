@@ -2108,11 +2108,21 @@ async function spRicerca(catKey, id, q){
   q=_spClean(q);
   if(!q){ box.innerHTML='<p class="note">Scrivi artista e/o titolo, poi premi Cerca.</p>'; return; }
   box.innerHTML='<p class="note">Cerco su Spotify…</p>';
-  let items=[];
-  try{ const j=await spFetch(q,'album',12); items=(j.albums&&j.albums.items)||[]; }
-  catch(e){ box.innerHTML='<p class="note" style="color:var(--amber)">Errore Spotify: '+esc(e.message)+'</p>'; return; }
-  if(!items.length){ box.innerHTML='<p class="note">Nessun risultato per «'+esc(q)+'». Prova a cambiare le parole: solo l\'artista, solo il titolo, oppure il titolo in inglese.</p>'; return; }
-  box.innerHTML = items.map(al=>spHitRow(catKey,id,al)).join('');
+  // Query lunghe/complesse fanno andare Spotify in 400 (a volte etichettato "Invalid limit"):
+  // si prova la query intera, poi via via accorciata alle prime parole.
+  const w=q.split(' ');
+  const tentativi=[q];
+  if(w.length>8) tentativi.push(w.slice(0,8).join(' '));
+  if(w.length>5) tentativi.push(w.slice(0,5).join(' '));
+  if(w.length>3) tentativi.push(w.slice(0,3).join(' '));
+  let items=null, lastErr='';
+  for(const t of tentativi){
+    try{ const j=await spFetch(t,'album',12); items=(j.albums&&j.albums.items)||[]; if(items.length) break; }
+    catch(e){ lastErr=e.message; items=items||[]; }
+  }
+  if(items && items.length){ box.innerHTML = items.map(al=>spHitRow(catKey,id,al)).join(''); return; }
+  if(lastErr && items===null){ box.innerHTML='<p class="note" style="color:var(--amber)">Errore Spotify: '+esc(lastErr)+'</p>'; return; }
+  box.innerHTML='<p class="note">Nessun risultato per «'+esc(q)+'». Prova a semplificare: solo l\'artista, solo il titolo, oppure il titolo in inglese.</p>';
 }
 /* finestra d'errore persistente e copiabile (i toast sparivano troppo in fretta) */
 function spErrore(catKey, id, msg){
@@ -2158,6 +2168,24 @@ function spScore(al, f){
   else if(ti && alTit){ const A=new Set(ti.split(' ')), B=alTit.split(' '); const common=B.filter(w=>A.has(w)).length; if(common>=2 || (common>=1 && A.size<=2)) s+=1; }
   return s;
 }
+/* cerca l'album provando più formulazioni (preciso → libero → accorciato → solo artista);
+   non lancia mai: ritorna un array (eventualmente vuoto) */
+async function _spCercaAlbum(f){
+  const t=String(f['Titolo']||'').trim(), a=String(f['Artista']||'').trim();
+  const libero=_spClean([a,t].join(' ')); const w=libero.split(' ');
+  const tentativi=[];
+  if(t && a) tentativi.push(`album:"${t}" artist:"${a}"`);
+  tentativi.push(libero);
+  if(w.length>6) tentativi.push(w.slice(0,6).join(' '));
+  if(w.length>4) tentativi.push(w.slice(0,4).join(' '));
+  if(a) tentativi.push(_spClean(a));
+  for(const q of tentativi){
+    if(!q) continue;
+    try{ const j=await spFetch(q,'album',12); const items=(j.albums&&j.albums.items)||[]; if(items.length) return items; }
+    catch(e){ /* passa al tentativo successivo */ }
+  }
+  return [];
+}
 async function spCollegaTutti(){
   const cat=catByKey('musica');
   const list=(objs.musica||[]).filter(o=> posseduto('musica',o.fields) && !o.fields['Spotify']);
@@ -2175,9 +2203,7 @@ async function spCollegaTutti(){
     if(window._spStop) break;
     i++;
     try{
-      let j = await spFetch(spQuery(o.fields),'album');
-      let items=(j.albums&&j.albums.items)||[];
-      if(!items.length){ j=await spFetch(_spClean([o.fields['Artista'],o.fields['Titolo']].filter(Boolean).join(' ')),'album'); items=(j.albums&&j.albums.items)||[]; }
+      const items = await _spCercaAlbum(o.fields);
       const best=items.map(al=>({al,s:spScore(al,o.fields)})).sort((a,b)=>b.s-a.s)[0];
       if(best && best.s>=3){
         const al=best.al, url=(al.external_urls&&al.external_urls.spotify)||('https://open.spotify.com/album/'+al.id);
