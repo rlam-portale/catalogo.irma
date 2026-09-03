@@ -2042,6 +2042,9 @@ function spQuery(f){
   if(t && a) return `album:"${t}" artist:"${a}"`;
   return [a,t].filter(Boolean).join(' ');
 }
+/* pulisce una ricerca a testo libero dai caratteri che Spotify tratta come
+   operatori (-, :, ", /) e che con un trattino "penzolante" causano errori 400 */
+function _spClean(s){ return String(s||'').replace(/[-–—\/\\|:"']+/g,' ').replace(/\s+/g,' ').trim(); }
 /* blocco mostrato nella scheda dettaglio (solo supporti musicali) */
 function spotifyBlock(cat, o){
   if(!cat.musica) return '';
@@ -2069,7 +2072,7 @@ function spotifyBlock(cat, o){
 /* apre la finestra di abbinamento con campo di ricerca modificabile */
 function spTrova(catKey, id){
   const o=objById(catKey,id); if(!o) return; const f=o.fields;
-  const q0=[f['Artista'], f['Titolo']].filter(Boolean).join(' ').trim();
+  const q0=_spClean([f['Artista'], f['Titolo']].filter(Boolean).join(' '));
   modal(`<h2>🎧 Abbina a Spotify</h2>
     <p class="note">Cerca l'album e scegli quello giusto. Se non lo trova, <b>correggi il testo</b> (prova solo l'artista, o solo il titolo, o il titolo in inglese) e premi Cerca.</p>
     <div class="sp-search">
@@ -2102,7 +2105,7 @@ function spHitRow(catKey, id, al){
 }
 async function spRicerca(catKey, id, q){
   const box=document.getElementById('sp-results'); if(!box) return;
-  q=String(q||'').trim();
+  q=_spClean(q);
   if(!q){ box.innerHTML='<p class="note">Scrivi artista e/o titolo, poi premi Cerca.</p>'; return; }
   box.innerHTML='<p class="note">Cerco su Spotify…</p>';
   let items=[];
@@ -2174,7 +2177,7 @@ async function spCollegaTutti(){
     try{
       let j = await spFetch(spQuery(o.fields),'album');
       let items=(j.albums&&j.albums.items)||[];
-      if(!items.length){ j=await spFetch([o.fields['Artista'],o.fields['Titolo']].filter(Boolean).join(' '),'album'); items=(j.albums&&j.albums.items)||[]; }
+      if(!items.length){ j=await spFetch(_spClean([o.fields['Artista'],o.fields['Titolo']].filter(Boolean).join(' ')),'album'); items=(j.albums&&j.albums.items)||[]; }
       const best=items.map(al=>({al,s:spScore(al,o.fields)})).sort((a,b)=>b.s-a.s)[0];
       if(best && best.s>=3){
         const al=best.al, url=(al.external_urls&&al.external_urls.spotify)||('https://open.spotify.com/album/'+al.id);

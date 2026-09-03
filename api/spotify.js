@@ -28,7 +28,9 @@ export default async function handler(req, res) {
   const q = (req.query.q || '').toString().trim();
   const type = (req.query.type || 'album').toString();
   const market = (req.query.market || 'IT').toString();
-  const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 8));
+  let limit = parseInt(req.query.limit, 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 8;
+  limit = Math.min(50, limit);
   if (!q) return res.status(400).json({ error: { message: 'Parametro "q" mancante.' } });
   try {
     const token = await getToken();
@@ -39,9 +41,15 @@ export default async function handler(req, res) {
       + '&q=' + encodeURIComponent(q);
     const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
     const text = await r.text();
-    res.status(r.status);
     res.setHeader('Content-Type', 'application/json');
-    res.send(text);
+    if (!r.ok) {
+      let msg = text;
+      try { const j = JSON.parse(text); msg = (j.error && (j.error.message || j.error)) || text; } catch (e) {}
+      return res.status(r.status).send(JSON.stringify({
+        error: { message: `${msg} [inviato: type=${type}, limit=${limit}, market=${market}, q="${q}"]` }
+      }));
+    }
+    res.status(r.status).send(text);
   } catch (e) {
     res.status(502).json({ error: { message: 'Spotify irraggiungibile: ' + e.message } });
   }
