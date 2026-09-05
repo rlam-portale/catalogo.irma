@@ -15,7 +15,10 @@ export default async function handler(req, res) {
   const { catKey, catLabel, sing, titolo, hints, imageUrl, imageUrls, docUrls, campi, currentFields, autore } = b;
   const isCoin = catKey === 'numismatica';
   const isMobili = catKey === 'mobili';
-  const senzaAutore = isCoin || isMobili;   // categorie senza "autore" d'archivio
+  // "autore" d'archivio: lo dice il client (hasAutore). Fallback al vecchio comportamento se assente.
+  const senzaAutore = (b.hasAutore === undefined) ? (isCoin || isMobili) : !b.hasAutore;
+  // oggetti d'antiquariato/arti decorative senza autore (tappeti, ceramiche, accessori)
+  const isOggetto = senzaAutore && !isCoin && !isMobili;
 
   // 1) scarica TUTTE le foto (fino a 4: dritto, rovescio, dettagli) e convertile in base64 per Claude
   const urls = (Array.isArray(imageUrls) && imageUrls.length ? imageUrls : (imageUrl ? [imageUrl] : [])).slice(0, 4);
@@ -118,7 +121,23 @@ Regole di output IMPORTANTI:
 - I campi numerici (altezza, larghezza, profondità, anno) come numero o stringa numerica.
 - "autore" non si applica ai mobili: restituisci un oggetto vuoto.`;
 
-  const system = isCoin ? systemMonete : isMobili ? systemMobili : systemArte;
+  const systemOggetti = `Sei un esperto di antiquariato e arti decorative (tappeti e arazzi, ceramiche e porcellane, oggettistica e complementi d'arredo).
+Il tuo compito è schedare un oggetto (categoria: ${catLabel || 'oggetto'}) nel modo più completo, accurato e documentato possibile.
+Procedi così:
+1. Osserva con attenzione TUTTE le fotografie fornite (insieme, retro, dettagli, marchi): tipologia, materiali e tecnica di esecuzione, manifattura/origine, decoro e stile, marchi/bolli/etichette, misure, stato di conservazione, integrità (sbeccature, restauri, usure, lacune).
+2. ESAMINA anche i DOCUMENTI allegati (perizie, fatture, certificati, cartellini): possono contenere manifattura, epoca, provenienza, misure, prezzo e dati di stima — usali come fonte prioritaria e citali nelle Note/Provenienza.
+3. Tieni conto delle INDICAZIONI PRELIMINARI dell'utente: sono spunti, non certezze — valutale criticamente.
+4. USA la ricerca web per confermare o approfondire: manifattura/ambito geografico, datazione, marchi, pezzi analoghi, quotazioni di mercato realistiche basate su realizzi comparabili d'asta.
+5. Compila i campi dello schema. Non inventare: se un dato non è determinabile, ometti il campo. Distingui i fatti dalle ipotesi e segnala il grado di certezza nei testi. Per le misure usa i campi numerici in centimetri.
+
+Regole di output IMPORTANTI:
+- Rispondi ESCLUSIVAMENTE con un unico oggetto JSON valido, senza testo prima o dopo, senza blocchi di codice.
+- Nelle chiavi di "opera" usa ESATTAMENTE i nomi di campo dello schema (tra virgolette). Ometti i campi che non sai compilare.
+- Per i campi con valori ammessi, usa solo uno di quelli.
+- I campi numerici (altezza, larghezza, diametro, lunghezza, anno) come numero o stringa numerica.
+- "autore" non si applica a questa categoria: restituisci un oggetto vuoto.`;
+
+  const system = isCoin ? systemMonete : isMobili ? systemMobili : isOggetto ? systemOggetti : systemArte;
 
   const bloccoAutore = senzaAutore ? '' : `
 AUTORE attualmente collegato:

@@ -601,11 +601,11 @@ function _mostraSignificato(idA, key){
 const CAT = [
   {key:'libri',     tbl:'Libri',     label:'Libri',                    plur:'libri',     sing:'libro',    prefix:'BIB', icon:'📚', sub:'Autore',       foto:'Scansioni', biblio:true},
   {key:'quadri',    tbl:'Quadri',    label:'Quadri, stampe e cornici', plur:'quadri',    sing:'quadro',   prefix:'QUA', icon:'🖼️', sub:'Autore',       foto:'Foto', campi:CAMPI.quadri, autore:true, ai:true},
-  {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti},
-  {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture, autore:true},
+  {key:'tappeti',   tbl:'Tappeti',   label:'Tappeti',                  plur:'tappeti',   sing:'tappeto',  prefix:'TAP', icon:'🧶', sub:'Origine',      foto:'Foto', campi:CAMPI.tappeti, ai:true},
+  {key:'sculture',  tbl:'Sculture',  label:'Sculture',                 plur:'sculture',  sing:'scultura', prefix:'SCU', icon:'🗿', sub:'Autore',       foto:'Foto', campi:CAMPI.sculture, autore:true, ai:true},
   {key:'mobili',    tbl:'Mobili',    label:'Mobili e arredi',          plur:'mobili',    sing:'mobile',   prefix:'MOB', icon:'🪑', sub:'Stile e manifattura', foto:'Foto', campi:CAMPI.mobili, ai:true},
-  {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori},
-  {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche},
+  {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori, ai:true},
+  {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche, ai:true},
   {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true},
   {key:'numismatica', tbl:'Numismatica', label:'Numismatica', plur:'monete', sing:'moneta', prefix:'NUM', icon:'🪙', sub:'Autorità emittente', foto:'Foto', campi:CAMPI.numismatica, ai:true}
 ];
@@ -2274,7 +2274,7 @@ async function avviaAi(catKey, id){
   _aiBusy = true;
   try{
     const r = await fetch('/api/ai', { method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
-      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, imageUrls, docUrls, campi, currentFields:curr, autore }) });
+      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints, imageUrl, imageUrls, docUrls, campi, currentFields:curr, autore, hasAutore: !!cat.autore }) });
     if(r.status===401){ chiediPassword(); return; }
     const txt = await r.text();
     let j = null; try{ j = JSON.parse(txt); }catch(e){}
