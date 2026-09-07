@@ -3502,6 +3502,7 @@ async function apriAmbientazioneAI(catKey, id, attId){
       <button class="btn" id="aiimg-amb" onclick="_aiImgGenera('ambientazione')">🖼 Ambientazione studio</button>
       <button class="btn secondary" id="aiimg-sco" onclick="_aiImgGenera('scontorno')">◻ Rimuovi sfondo</button>
       <button class="btn secondary" id="aiimg-salva" onclick="_aiImgSalva()" disabled>💾 Salva come nuova foto</button>
+      <button class="btn secondary" id="aiimg-hd" onclick="_aiImgSalvaHD()" disabled title="Ingrandisce con AI mantenendo la fedeltà e salva la versione ad alta risoluzione">⬆ Salva in alta risoluzione (4×)</button>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" style="margin-right:auto" onclick="openDetail('${catKey}','${id}')">← Torna alla scheda</button>
@@ -3536,6 +3537,7 @@ async function _aiImgGenera(mode){
     _aiImg.out={ image:j.image, mime:j.mime||'image/png' };
     if(out) out.innerHTML=`<img src="data:${esc(_aiImg.out.mime)};base64,${_aiImg.out.image}">`;
     if(sv) sv.disabled=false;
+    const hd=document.getElementById('aiimg-hd'); if(hd) hd.disabled=false;
   }catch(e){ if(out) out.innerHTML='<span class="note" style="color:var(--amber)">Errore: '+esc(e.message)+'</span>'; }
   finally{ _aiImg.busy=false; if(amb) amb.disabled=false; if(sco) sco.disabled=false; }
 }
@@ -3551,6 +3553,25 @@ async function _aiImgSalva(){
     toast('Immagine salvata come nuova foto ✓');
     openDetail(_aiImg.catKey, _aiImg.id);
   }catch(e){ toast('Salvataggio non riuscito: '+e.message); if(sv){ sv.disabled=false; sv.textContent='💾 Salva come nuova foto'; } }
+}
+/* upscaling fedele (Real-ESRGAN): il server ingrandisce e salva direttamente la nuova foto ad alta risoluzione */
+async function _aiImgSalvaHD(){
+  if(!_aiImg || !_aiImg.out || _aiImg.busy) return;
+  const cat=catByKey(_aiImg.catKey), o=objById(_aiImg.catKey,_aiImg.id);
+  const fn=`ambientazione-hd-${o?codeStr(cat,o.fields):_aiImg.id}-${Date.now()}.png`;
+  const hd=document.getElementById('aiimg-hd'), sv=document.getElementById('aiimg-salva');
+  _aiImg.busy=true; if(hd){ hd.disabled=true; hd.textContent='⏳ Alta risoluzione… (fino a ~1 min)'; } if(sv) sv.disabled=true;
+  try{
+    const res=await fetch('/api/upscale',{ method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
+      body: JSON.stringify({ image:_aiImg.out.image, mime:_aiImg.out.mime, scale:4, tabella:cat.tbl, recordId:_aiImg.id, campo:cat.foto, filename:fn }) });
+    if(res.status===401){ chiediPassword(); throw new Error('password non valida'); }
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status));
+    await ricaricaRecord(_aiImg.catKey,_aiImg.id);
+    toast('Salvata in alta risoluzione ✓');
+    openDetail(_aiImg.catKey,_aiImg.id);
+  }catch(e){ toast('Alta risoluzione non riuscita: '+e.message); }
+  finally{ _aiImg.busy=false; if(hd){ hd.disabled=false; hd.textContent='⬆ Salva in alta risoluzione (4×)'; } if(sv) sv.disabled=false; }
 }
 /* imposta una foto come copertina: la porta in prima posizione (la copertina è la 1ª foto) */
 async function impostaCopertina(catKey, id, attId){
