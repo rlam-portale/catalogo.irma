@@ -3475,6 +3475,7 @@ function mediaSection(cat, o){
     <div class="seclabel">Fotografie${hint}</div>
     <div class="gallery">${gallery}</div>
     <div style="margin:2px 0 4px"><button class="btn secondary small" onclick="apriRaddrizza('${cat.key}','${o.id}')">📐 Aggiungi foto e correggi la prospettiva</button></div>
+    ${(cat.campi||[]).some(c=>c.t==='num' && /(cm|mm)$/.test(c.k)) && fotos.length ? `<div style="margin:2px 0 4px"><button class="btn secondary small" onclick="apriMisura('${cat.key}','${o.id}','${fotos[0].id}')">📏 Misura e quota (righello + AI)</button></div>` : ''}
     ${cat.key==='numismatica' ? `<div style="margin:2px 0 4px"><button class="btn secondary small" onclick="apriRitaglioQuadrato('${cat.key}','${o.id}')">◻ Aggiungi foto con ritaglio quadrato (monete)</button></div>` : ''}
     <div class="seclabel">Documenti — perizie, certificati, fatture</div>
     <ul class="doclist">${docItems || '<li style="border:none; color:var(--muted)">Nessun documento allegato.</li>'}</ul>
@@ -3617,6 +3618,181 @@ async function impostaCopertina(catKey, id, attId){
     toast('Copertina aggiornata ✓');
     openDetail(catKey, id);
   }catch(e){ toast('Cambio copertina non riuscito: '+e.message); }
+}
+
+/* ===== Misura & quota: righello (calibrazione su riferimento noto) + stima AI + immagine quotata ===== */
+let _mis=null;
+function _misDist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function apriMisura(catKey, id, attId){
+  const cat=catByKey(catKey), o=objById(catKey,id); if(!o) return;
+  const fotos=o.fields[cat.foto]||[]; if(!fotos.length){ toast('Aggiungi prima una foto.'); return; }
+  const att=fotos.find(a=>a.id===attId)||fotos[0];
+  const dimFields=(cat.campi||[]).filter(c=>c.t==='num' && /(cm|mm)$/.test(c.k)).map(c=>({k:c.k,l:c.l,unit:/mm$/.test(c.k)?'mm':'cm'}));
+  _mis={ catKey, id, cat, fotos, att, dimFields, img:null, natW:0, natH:0, disp:1, pxPerCm:null, ref:null, quote:[], mode:null, field:null, pending:null };
+  const thumbs = fotos.length>1 ? `<div class="mis-thumbs">${fotos.map(a=>`<img src="${esc((a.thumbnails&&a.thumbnails.small&&a.thumbnails.small.url)||a.url)}" class="${a.id===att.id?'sel':''}" onclick="_misCarica('${a.id}')">`).join('')}</div>` : '';
+  const opts = dimFields.map(d=>`<option value="${esc(d.k)}">${esc(d.l)}</option>`).join('') || '<option value="">(nessun campo dimensione)</option>';
+  modal(`<h2>📏 Misura e quota</h2>
+    <p class="note">1) <b>Imposta scala</b>: clicca i due estremi di un oggetto di misura nota nella foto (righello, moneta, carta di credito, A4) e digita quanti cm. 2) Scegli una quota e clicca i due estremi sull'oggetto. La <b>stima AI</b> è solo un punto di partenza da confermare col righello.</p>
+    ${thumbs}
+    <div class="mis-hint" id="mis-hint">Pronto. Inizia con «Imposta scala».</div>
+    <div class="mis-cvwrap"><canvas id="mis-cv"></canvas></div>
+    <div class="mis-bar">
+      <button class="btn secondary small" id="mis-ref" onclick="_misSetMode('ref')">📐 Imposta scala (riferimento)</button>
+      <span class="note" id="mis-scale">scala: non impostata</span>
+    </div>
+    <div class="mis-bar">
+      <select id="mis-field" class="small">${opts}</select>
+      <button class="btn secondary small" id="mis-add" onclick="_misSetMode('measure')">＋ Aggiungi quota</button>
+      <button class="btn secondary small" id="mis-ai" onclick="_misStima()">🤖 Stima AI</button>
+    </div>
+    <div id="mis-list" class="mis-list"></div>
+    <div id="mis-ai-out" class="note" style="margin-top:6px"></div>
+    <div class="mis-bar" style="margin-top:10px">
+      <button class="btn" id="mis-save" onclick="_misSalvaMisure()">💾 Salva misure nei campi</button>
+      <button class="btn secondary" id="mis-img" onclick="_misSalvaImmagine()">🖼 Salva immagine quotata</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="openDetail('${catKey}','${id}')">← Torna alla scheda</button>
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+    </div>`, true);
+  _misCarica(att.id);
+}
+async function _misCarica(attId){
+  const m=_mis; if(!m) return;
+  const att=m.fotos.find(a=>a.id===attId); if(!att) return;
+  m.att=att; m.pxPerCm=null; m.ref=null; m.quote=[]; m.mode=null; m.pending=null;
+  const sc=document.getElementById('mis-scale'); if(sc) sc.textContent='scala: non impostata';
+  try{
+    const im=await new Promise((res,rej)=>{ const x=new Image(); x.crossOrigin='anonymous'; x.onload=()=>res(x); x.onerror=()=>rej(new Error('immagine')); x.src=att.url; });
+    m.img=im; m.natW=im.naturalWidth; m.natH=im.naturalHeight;
+    const maxW=620, maxH=460; m.disp=Math.min(1, maxW/m.natW, maxH/m.natH);
+    const cv=document.getElementById('mis-cv'); if(!cv) return;
+    cv.width=Math.round(m.natW*m.disp); cv.height=Math.round(m.natH*m.disp);
+    cv.onclick=_misClick;
+    document.querySelectorAll('.mis-thumbs img').forEach(t=>t.classList.toggle('sel', t.getAttribute('onclick').includes("'"+attId+"'")));
+    _misRedraw(); _misListaQuote();
+  }catch(e){ toast('Foto non caricabile: '+e.message); }
+}
+function _misSetMode(mode){
+  const m=_mis; if(!m) return;
+  if(mode==='measure'){ if(!m.pxPerCm){ toast('Prima imposta la scala col riferimento.'); return; } m.field=(document.getElementById('mis-field')||{}).value||''; }
+  m.mode=mode; m.pending=null;
+  const h=document.getElementById('mis-hint');
+  if(h) h.textContent = mode==='ref' ? 'Scala: clicca il PRIMO estremo del riferimento…'
+    : 'Quota «'+((m.dimFields.find(d=>d.k===m.field)||{}).l||m.field)+'»: clicca il PRIMO estremo…';
+}
+function _misClick(e){
+  const m=_mis; if(!m || !m.mode) return;
+  const cv=e.target; const r=cv.getBoundingClientRect();
+  const p={ x:(e.clientX-r.left)/m.disp, y:(e.clientY-r.top)/m.disp };   // coord in pixel naturali
+  const h=document.getElementById('mis-hint');
+  if(!m.pending){ m.pending=p; if(h) h.textContent='…ora clicca il SECONDO estremo.'; _misRedraw(p); return; }
+  const a=m.pending, b=p; m.pending=null;
+  if(m.mode==='ref'){
+    const cm=parseFloat((prompt('Lunghezza reale del riferimento in cm (es. 10 per un righello, 8.56 per una carta di credito):','')||'').replace(',','.'));
+    if(!(cm>0)){ m.mode=null; _misRedraw(); return; }
+    m.ref={a,b}; m.pxPerCm=_misDist(a,b)/cm;
+    const sc=document.getElementById('mis-scale'); if(sc) sc.textContent='scala: '+m.pxPerCm.toFixed(1)+' px/cm';
+    if(h) h.textContent='Scala impostata ✓. Ora scegli una quota e clicca i due estremi.';
+  } else {
+    const cm=_misDist(a,b)/m.pxPerCm;
+    const fld=m.dimFields.find(d=>d.k===m.field);
+    m.quote.push({ field:m.field, label:(fld?fld.l:m.field), unit:(fld?fld.unit:'cm'), a, b, cm });
+    if(h) h.textContent='Quota aggiunta ✓. Aggiungine altre o salva.';
+    _misListaQuote();
+  }
+  m.mode=null; _misRedraw();
+}
+function _misValoreQuota(q){ return q.unit==='mm' ? q.cm*10 : q.cm; }
+function _misFmt(q){ const v=_misValoreQuota(q); return (Math.round(v*10)/10).toString().replace('.',',')+' '+q.unit; }
+function _misArrow(ctx,x1,y1,x2,y2,color,lw){
+  ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=lw;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  const ang=Math.atan2(y2-y1,x2-x1), hl=Math.max(6,lw*3);
+  [[x1,y1,ang],[x2,y2,ang+Math.PI]].forEach(([x,y,a])=>{ ctx.beginPath(); ctx.moveTo(x,y);
+    ctx.lineTo(x-hl*Math.cos(a-0.4), y-hl*Math.sin(a-0.4)); ctx.lineTo(x-hl*Math.cos(a+0.4), y-hl*Math.sin(a+0.4)); ctx.closePath(); ctx.fill(); });
+}
+function _misEtichetta(ctx,x,y,txt,fs){
+  ctx.font='bold '+fs+'px system-ui, sans-serif'; const w=ctx.measureText(txt).width, pad=fs*0.35;
+  ctx.fillStyle='rgba(15,110,86,.92)'; ctx.fillRect(x-w/2-pad, y-fs/2-pad, w+pad*2, fs+pad*2);
+  ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(txt,x,y);
+}
+function _misDisegna(ctx, s, includeRef){
+  const m=_mis, lw=Math.max(2, ctx.canvas.width/350), fs=Math.max(13, ctx.canvas.width/42);
+  if(includeRef && m.ref){ _misArrow(ctx, m.ref.a.x*s, m.ref.a.y*s, m.ref.b.x*s, m.ref.b.y*s, 'rgba(230,180,20,.95)', lw); }
+  m.quote.forEach(q=>{ _misArrow(ctx, q.a.x*s, q.a.y*s, q.b.x*s, q.b.y*s, 'rgba(15,110,86,.95)', lw);
+    _misEtichetta(ctx, (q.a.x+q.b.x)/2*s, (q.a.y+q.b.y)/2*s, _misFmt(q), fs); });
+}
+function _misRedraw(pending){
+  const m=_mis, cv=document.getElementById('mis-cv'); if(!m||!cv||!m.img) return;
+  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(m.img,0,0,cv.width,cv.height);
+  _misDisegna(ctx, m.disp, true);
+  if(pending){ ctx.fillStyle='#e6b414'; ctx.beginPath(); ctx.arc(pending.x*m.disp, pending.y*m.disp, 4, 0, 7); ctx.fill(); }
+}
+function _misListaQuote(){
+  const m=_mis, el=document.getElementById('mis-list'); if(!el) return;
+  el.innerHTML = m.quote.length ? m.quote.map((q,i)=>`<span class="mis-chip">${esc(q.label)}: <b>${esc(_misFmt(q))}</b> <button onclick="_misRimuovi(${i})" title="Rimuovi">✕</button></span>`).join('') : '<span class="note">Nessuna quota tracciata.</span>';
+}
+function _misRimuovi(i){ if(!_mis) return; _mis.quote.splice(i,1); _misRedraw(); _misListaQuote(); }
+async function _misSorgenteB64(){
+  const m=_mis; const max=1536; let w=m.natW, h=m.natH; const s=Math.min(1, max/Math.max(w,h));
+  const c=document.createElement('canvas'); c.width=Math.round(w*s); c.height=Math.round(h*s);
+  c.getContext('2d').drawImage(m.img,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',0.9).split(',')[1];
+}
+async function _misStima(){
+  const m=_mis; if(!m) return; const btn=document.getElementById('mis-ai'); const outEl=document.getElementById('mis-ai-out');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Stimo…'; }
+  try{
+    const b64=await _misSorgenteB64();
+    const res=await fetch('/api/misura',{ method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
+      body: JSON.stringify({ image:b64, mime:'image/jpeg', tipo:(m.cat.sing+' — '+m.cat.label), titolo:(objById(m.catKey,m.id)||{fields:{}}).fields['Titolo']||'', campi:m.dimFields }) });
+    if(res.status===401){ chiediPassword(); throw new Error('password non valida'); }
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status));
+    const r=j.result||{}; _mis.stima=r.misure||{};
+    const righe=Object.entries(_mis.stima).map(([k,v])=>`${esc(k)}: <b>${esc(String(v))}</b>`).join(' · ') || '—';
+    if(outEl) outEl.innerHTML=`🤖 <b>Stima</b> (${esc(r.confidenza||'?')}, rif.: ${esc(r.riferimento||'nessuno')}): ${righe}`
+      + (Object.keys(_mis.stima).length?` <button class="btn small secondary" onclick="_misUsaStima()">Usa nei campi</button>`:'')
+      + (r.note?`<br><span class="note">${esc(r.note)}</span>`:'')
+      + `<br><span class="note" style="color:var(--amber)">È una stima: conferma col righello.</span>`;
+  }catch(e){ if(outEl) outEl.innerHTML='<span style="color:var(--amber)">Stima non riuscita: '+esc(e.message)+'</span>'; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🤖 Stima AI'; } }
+}
+async function _misUsaStima(){
+  const m=_mis; if(!m || !m.stima) return;
+  const patch={}; m.dimFields.forEach(d=>{ const v=m.stima[d.k]; const n=parseFloat(String(v).replace(',','.')); if(n>0) patch[d.k]=Math.round(n*10)/10; });
+  if(!Object.keys(patch).length){ toast('Nessun valore da applicare.'); return; }
+  if(!confirm('Scrivo la STIMA AI nei campi dimensione? Potrai correggerla col righello o a mano.')) return;
+  try{ const j=await updateRec(m.cat.tbl, m.id, patch); patchRec(m.catKey, m.id, j); toast('Stima applicata ai campi ✓'); }
+  catch(e){ toast('Non riuscito: '+e.message); }
+}
+async function _misSalvaMisure(){
+  const m=_mis; if(!m) return;
+  if(!m.quote.length){ toast('Traccia almeno una quota col righello.'); return; }
+  const patch={}; m.quote.forEach(q=>{ if(q.field) patch[q.field]=Math.round(_misValoreQuota(q)*10)/10; });
+  if(!Object.keys(patch).length){ toast('Assegna le quote a un campo dimensione.'); return; }
+  const btn=document.getElementById('mis-save'); if(btn){ btn.disabled=true; btn.textContent='💾 Salvo…'; }
+  try{ const j=await updateRec(m.cat.tbl, m.id, patch); patchRec(m.catKey, m.id, j); toast('Misure salvate nei campi ✓'); }
+  catch(e){ toast('Salvataggio non riuscito: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='💾 Salva misure nei campi'; } }
+}
+async function _misSalvaImmagine(){
+  const m=_mis; if(!m) return;
+  if(!m.quote.length){ toast('Traccia almeno una quota da disegnare.'); return; }
+  const btn=document.getElementById('mis-img'); if(btn){ btn.disabled=true; btn.textContent='🖼 Salvo…'; }
+  try{
+    const outMax=2048; const s=Math.min(1, outMax/Math.max(m.natW,m.natH));
+    const c=document.createElement('canvas'); c.width=Math.round(m.natW*s); c.height=Math.round(m.natH*s);
+    const ctx=c.getContext('2d'); ctx.drawImage(m.img,0,0,c.width,c.height);
+    _misDisegna(ctx, s, false);   // sull'immagine finale niente riferimento, solo le quote
+    const b64=c.toDataURL('image/jpeg',0.92).split(',')[1];
+    const o=objById(m.catKey,m.id); const fn=`quotata-${o?codeStr(m.cat,o.fields):m.id}-${Date.now()}.jpg`;
+    await proxyUpload(m.id, m.cat.foto, 'image/jpeg', b64, fn);
+    await ricaricaRecord(m.catKey, m.id);
+    toast('Immagine quotata salvata ✓');
+    openDetail(m.catKey, m.id);
+  }catch(e){ toast('Salvataggio immagine non riuscito: '+e.message); if(btn){ btn.disabled=false; btn.textContent='🖼 Salva immagine quotata'; } }
 }
 function lightbox(url){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${esc(url)}">`; document.body.appendChild(d); }
 function patchRec(catKey, id, rec){ const arr=objs[catKey]; const i=arr.findIndex(x=>x.id===id); if(i>=0) arr[i]=rec; }

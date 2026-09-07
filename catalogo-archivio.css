@@ -349,6 +349,18 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
   display:flex; align-items:center; justify-content:center; overflow:hidden; padding:6px; }
 .aiimg-box img{ max-width:100%; max-height:44vh; object-fit:contain; display:block; border-radius:6px; }
 @media (max-width:640px){ .aiimg-grid{ grid-template-columns:1fr; } }
+/* strumento Misura & quota */
+.mis-thumbs{ display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
+.mis-thumbs img{ width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid var(--line); cursor:pointer; opacity:.7; }
+.mis-thumbs img.sel{ opacity:1; box-shadow:0 0 0 2px var(--accent); }
+.mis-hint{ font-size:12.5px; color:var(--accent-dark); background:var(--acc-velo); border:1px solid var(--line); border-radius:8px; padding:6px 10px; margin:6px 0; }
+.mis-cvwrap{ border:1px solid var(--line); border-radius:10px; overflow:auto; background:var(--sup-quieta); display:flex; justify-content:center; }
+#mis-cv{ display:block; max-width:100%; cursor:crosshair; touch-action:none; }
+.mis-bar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+.mis-list{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.mis-chip{ background:var(--sup-quieta); border:1px solid var(--line); border-radius:999px; padding:3px 10px; font-size:13px; }
+.mis-chip button{ border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; margin-left:4px; }
+.mis-chip button:hover{ color:var(--red); }
 
 /* ===== Sezione Strumenti di lavoro EON (beni aziendali, distinti) ===== */
 .eon-banner{ background:var(--acc-velo); border:1px solid var(--accent); border-left:4px solid var(--accent);
