@@ -336,6 +336,13 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 .gallery .ph .aiimg{ position:absolute; bottom:2px; left:2px; width:20px; height:20px; border:none; border-radius:50%;
   background:rgba(23,23,26,.72); color:#fff; font-size:11px; line-height:1; cursor:pointer; padding:0; }
 .gallery .ph .aiimg:hover{ background:rgba(23,23,26,.95); }
+/* foto di copertina: cornice evidenziata + stella; sulle altre, pulsante per eleggerla (in basso a destra) */
+.gallery .ph.is-cover{ box-shadow:0 0 0 2px var(--accent); }
+.gallery .ph .cover-mark, .gallery .ph .setcover{ position:absolute; bottom:2px; right:2px; width:20px; height:20px;
+  border:none; border-radius:50%; font-size:12px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; }
+.gallery .ph .cover-mark{ background:var(--accent); color:#fff; }
+.gallery .ph .setcover{ background:rgba(23,23,26,.72); color:#fff; cursor:pointer; }
+.gallery .ph .setcover:hover{ background:rgba(23,23,26,.95); }
 /* finestra Ambientazione / scontorno AI */
 .aiimg-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px; }
 .aiimg-box{ border:1px solid var(--line); border-radius:10px; background:var(--sup-quieta); min-height:200px;

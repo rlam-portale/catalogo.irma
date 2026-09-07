@@ -238,15 +238,28 @@ async function scriviLink(recordId, { info, ids }) {
   }
 }
 
-/** Allinea gli allegati di un campo all'elenco di id passato (rimozioni). */
+/** Allinea gli allegati di un campo all'elenco passato: rimuove quelli assenti e
+ *  RIORDINA (posizione) quelli presenti secondo l'ordine dell'array — così il
+ *  client può cambiare la foto di copertina mettendola per prima. */
 async function sincronizzaAllegati(tabCol, recordId, campoCol, valore) {
   const rows = await rest(
     `allegati?select=id&tabella=eq.${encodeURIComponent(tabCol)}&campo=eq.${encodeURIComponent(campoCol)}&record_id=eq.${encodeURIComponent(recordId)}`
   );
-  const daTenere = new Set((valore || []).filter((v) => v.id).map((v) => String(v.id)));
+  const conId = (valore || []).filter((v) => v && v.id);
+  const daTenere = new Set(conId.map((v) => String(v.id)));
   const daEliminare = rows.map((r) => String(r.id)).filter((id) => !daTenere.has(id));
   if (daEliminare.length) {
     await rest(`allegati?id=in.(${daEliminare.join(',')})`, { method: 'DELETE' });
+  }
+  // riordino: assegna posizione = indice nell'array (limitato agli allegati esistenti)
+  const esistenti = new Set(rows.map((r) => String(r.id)));
+  for (let i = 0; i < conId.length; i++) {
+    const id = String(conId[i].id);
+    if (!esistenti.has(id)) continue;
+    await rest(
+      `allegati?id=eq.${encodeURIComponent(id)}&tabella=eq.${encodeURIComponent(tabCol)}&campo=eq.${encodeURIComponent(campoCol)}&record_id=eq.${encodeURIComponent(recordId)}`,
+      { method: 'PATCH', body: { posizione: i }, headers: { Prefer: 'return=minimal' } }
+    );
   }
 }
 

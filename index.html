@@ -3460,9 +3460,11 @@ function mediaSection(cat, o){
   const fotos = f[cat.foto] || [];
   const docs = f['Documenti'] || [];
   const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
-  const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
+  const ph = (a, i) => `<div class="ph${i===0?' is-cover':''}"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
     + `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>`
     + `<button class="aiimg" title="Ambientazione / scontorno AI" onclick="apriAmbientazioneAI('${cat.key}','${o.id}','${a.id}')">✨</button>`
+    + (i===0 ? `<span class="cover-mark" title="Foto di copertina">★</span>`
+             : `<button class="setcover" title="Imposta come copertina" onclick="impostaCopertina('${cat.key}','${o.id}','${a.id}')">☆</button>`)
     + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
   const gallery = fotos.map(ph).join('')
     + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
@@ -3547,6 +3549,20 @@ async function _aiImgSalva(){
     toast('Immagine salvata come nuova foto ✓');
     openDetail(_aiImg.catKey, _aiImg.id);
   }catch(e){ toast('Salvataggio non riuscito: '+e.message); if(sv){ sv.disabled=false; sv.textContent='💾 Salva come nuova foto'; } }
+}
+/* imposta una foto come copertina: la porta in prima posizione (la copertina è la 1ª foto) */
+async function impostaCopertina(catKey, id, attId){
+  const cat=catByKey(catKey), o=objById(catKey,id); if(!o) return;
+  const fotos=(o.fields[cat.foto]||[]).slice();
+  const idx=fotos.findIndex(a=>a.id===attId);
+  if(idx<=0) return;   // non trovata o già copertina
+  const [scelta]=fotos.splice(idx,1); fotos.unshift(scelta);
+  try{
+    const j=await updateRec(cat.tbl, id, { [cat.foto]: fotos });
+    patchRec(catKey, id, j);
+    toast('Copertina aggiornata ✓');
+    openDetail(catKey, id);
+  }catch(e){ toast('Cambio copertina non riuscito: '+e.message); }
 }
 function lightbox(url){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${esc(url)}">`; document.body.appendChild(d); }
 function patchRec(catKey, id, rec){ const arr=objs[catKey]; const i=arr.findIndex(x=>x.id===id); if(i>=0) arr[i]=rec; }
