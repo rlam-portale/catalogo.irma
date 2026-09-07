@@ -3502,7 +3502,7 @@ async function apriAmbientazioneAI(catKey, id, attId){
       <button class="btn" id="aiimg-amb" onclick="_aiImgGenera('ambientazione')">🖼 Ambientazione studio</button>
       <button class="btn secondary" id="aiimg-sco" onclick="_aiImgGenera('scontorno')">◻ Rimuovi sfondo</button>
       <button class="btn secondary" id="aiimg-salva" onclick="_aiImgSalva()" disabled>💾 Salva come nuova foto</button>
-      <button class="btn secondary" id="aiimg-hd" onclick="_aiImgSalvaHD()" disabled title="Ingrandisce con AI mantenendo la fedeltà e salva la versione ad alta risoluzione">⬆ Salva in alta risoluzione (4×)</button>
+      <button class="btn secondary" id="aiimg-hd" onclick="_aiImgSalvaHD()" disabled title="Migliora la risoluzione con un upscaler gratuito nel browser e salva la nuova foto">⬆ Migliora risoluzione (gratis)</button>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" style="margin-right:auto" onclick="openDetail('${catKey}','${id}')">← Torna alla scheda</button>
@@ -3554,24 +3554,44 @@ async function _aiImgSalva(){
     openDetail(_aiImg.catKey, _aiImg.id);
   }catch(e){ toast('Salvataggio non riuscito: '+e.message); if(sv){ sv.disabled=false; sv.textContent='💾 Salva come nuova foto'; } }
 }
-/* upscaling fedele (Real-ESRGAN): il server ingrandisce e salva direttamente la nuova foto ad alta risoluzione */
+/* upscaling gratuito nel browser (UpscalerJS + TensorFlow.js): ingrandisce e salva come nuova foto.
+   Gira sul computer dell'utente: nessuna chiave, nessun costo. */
+let _upscalerInst = null;
+async function _ensureUpscaler(){
+  if(_upscalerInst) return _upscalerInst;
+  await loadScript(CDN.tfjs);
+  await loadScript(CDN.upscaler);
+  const U = window.Upscaler;
+  const Ctor = (U && U.default) ? U.default : U;
+  if(typeof Ctor !== 'function') throw new Error('libreria di upscaling non disponibile');
+  _upscalerInst = new Ctor();   // modello ESRGAN di default
+  return _upscalerInst;
+}
 async function _aiImgSalvaHD(){
   if(!_aiImg || !_aiImg.out || _aiImg.busy) return;
   const cat=catByKey(_aiImg.catKey), o=objById(_aiImg.catKey,_aiImg.id);
-  const fn=`ambientazione-hd-${o?codeStr(cat,o.fields):_aiImg.id}-${Date.now()}.png`;
   const hd=document.getElementById('aiimg-hd'), sv=document.getElementById('aiimg-salva');
-  _aiImg.busy=true; if(hd){ hd.disabled=true; hd.textContent='⏳ Alta risoluzione… (fino a ~1 min)'; } if(sv) sv.disabled=true;
+  _aiImg.busy=true; if(hd){ hd.disabled=true; hd.textContent='⏳ Miglioro… (può richiedere un po\')'; } if(sv) sv.disabled=true;
   try{
-    const res=await fetch('/api/upscale',{ method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
-      body: JSON.stringify({ image:_aiImg.out.image, mime:_aiImg.out.mime, scale:4, tabella:cat.tbl, recordId:_aiImg.id, campo:cat.foto, filename:fn }) });
-    if(res.status===401){ chiediPassword(); throw new Error('password non valida'); }
-    const j=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status));
+    const up=await _ensureUpscaler();
+    const srcUrl=`data:${_aiImg.out.mime};base64,${_aiImg.out.image}`;
+    const imgEl=await new Promise((res,rej)=>{ const x=new Image(); x.onload=()=>res(x); x.onerror=()=>rej(new Error('immagine non valida')); x.src=srcUrl; });
+    const big=await up.upscale(imgEl, { output:'base64', patchSize:64, padding:2,
+      progress:(rate)=>{ if(hd) hd.textContent='⏳ Miglioro… '+Math.round((rate||0)*100)+'%'; } });
+    // normalizzo a JPEG, lato lungo max 2048, per un upload leggero
+    const bigImg=await new Promise((res,rej)=>{ const x=new Image(); x.onload=()=>res(x); x.onerror=()=>rej(new Error('risultato non valido')); x.src=big; });
+    const max=2048; let w=bigImg.naturalWidth, h=bigImg.naturalHeight; const s=Math.min(1, max/Math.max(w,h));
+    w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high'; ctx.drawImage(bigImg,0,0,w,h);
+    const b64=c.toDataURL('image/jpeg',0.92).split(',')[1];
+    const fn=`ambientazione-hd-${o?codeStr(cat,o.fields):_aiImg.id}-${Date.now()}.jpg`;
+    await proxyUpload(_aiImg.id, cat.foto, 'image/jpeg', b64, fn);
     await ricaricaRecord(_aiImg.catKey,_aiImg.id);
-    toast('Salvata in alta risoluzione ✓');
+    toast('Immagine ad alta risoluzione salvata ✓');
     openDetail(_aiImg.catKey,_aiImg.id);
-  }catch(e){ toast('Alta risoluzione non riuscita: '+e.message); }
-  finally{ _aiImg.busy=false; if(hd){ hd.disabled=false; hd.textContent='⬆ Salva in alta risoluzione (4×)'; } if(sv) sv.disabled=false; }
+  }catch(e){ toast('Upscaling non riuscito: '+e.message); if(hd){ hd.disabled=false; hd.textContent='⬆ Migliora risoluzione (gratis)'; } if(sv) sv.disabled=false; }
+  finally{ _aiImg.busy=false; }
 }
 /* imposta una foto come copertina: la porta in prima posizione (la copertina è la 1ª foto) */
 async function impostaCopertina(catKey, id, attId){
@@ -4218,7 +4238,9 @@ const CDN = {
   tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
   pdfjs: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
   pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
-  jspdf: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js'
+  jspdf: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
+  tfjs: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js',
+  upscaler: 'https://cdn.jsdelivr.net/npm/upscaler@1.0.0-beta.19/dist/browser/umd/upscaler.min.js'
 };
 const loadedScripts = {};
 function loadScript(src){
