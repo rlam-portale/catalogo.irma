@@ -3462,6 +3462,7 @@ function mediaSection(cat, o){
   const thumb = a => (a.thumbnails && a.thumbnails.large && a.thumbnails.large.url) || a.url;
   const ph = a => `<div class="ph"><img src="${esc(thumb(a))}" onclick="lightbox('${esc(a.url)}')">`
     + `<button class="edit" title="Modifica: ritaglia / ruota / raddrizza" onclick="apriModificaFoto('${cat.key}','${o.id}','${a.id}')">✎</button>`
+    + `<button class="aiimg" title="Ambientazione / scontorno AI" onclick="apriAmbientazioneAI('${cat.key}','${o.id}','${a.id}')">✨</button>`
     + `<button class="del" title="Rimuovi" onclick="rimuoviAllegato('${cat.key}','${o.id}','${cat.foto}','${a.id}')">×</button></div>`;
   const gallery = fotos.map(ph).join('')
     + `<div class="add" title="Aggiungi foto" onclick="aggiungiFoto('${cat.key}','${o.id}')">＋</div>`;
@@ -3476,6 +3477,76 @@ function mediaSection(cat, o){
     <div class="seclabel">Documenti — perizie, certificati, fatture</div>
     <ul class="doclist">${docItems || '<li style="border:none; color:var(--muted)">Nessun documento allegato.</li>'}</ul>
     <button class="btn secondary small" onclick="aggiungiDoc('${cat.key}','${o.id}')">＋ Aggiungi documento (immagine o PDF)</button>`;
+}
+/* ===== Ambientazione / scontorno AI (Google Gemini 2.5 Flash Image) =====
+   Ricolloca l'oggetto su fondo pulito o in un set da studio mantenendolo fedele.
+   Il risultato si salva come NUOVA foto: le foto documentali originali restano intatte. */
+let _aiImg = null;
+async function apriAmbientazioneAI(catKey, id, attId){
+  const cat=catByKey(catKey), o=objById(catKey,id); if(!o) return;
+  const fotos=o.fields[cat.foto]||[];
+  const att = fotos.find(a=>a.id===attId) || fotos[0];
+  if(!att){ toast('Aggiungi prima una foto da elaborare.'); return; }
+  _aiImg = { catKey, id, srcUrl:att.url, srcB64:null, out:null, busy:false };
+  modal(`<h2>✨ Ambientazione / scontorno AI</h2>
+    <p class="note">L'AI ricolloca l'oggetto su uno sfondo pulito o in un set fotografico da studio, <b>mantenendolo fedele</b>. Il risultato si salva come <b>nuova foto</b>; le foto originali non vengono toccate.</p>
+    <div class="aiimg-grid">
+      <div><div class="seclabel">Foto di partenza</div><div class="aiimg-box"><img src="${esc(att.url)}"></div></div>
+      <div><div class="seclabel">Risultato</div><div class="aiimg-box" id="aiimg-out"><span class="note">— premi Genera —</span></div></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>Indicazioni di stile (facoltative)</label>
+      <input id="aiimg-hint" placeholder="es. fondale grigio caldo, luce morbida da sinistra, piano in marmo…"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
+      <button class="btn" id="aiimg-amb" onclick="_aiImgGenera('ambientazione')">🖼 Ambientazione studio</button>
+      <button class="btn secondary" id="aiimg-sco" onclick="_aiImgGenera('scontorno')">◻ Rimuovi sfondo</button>
+      <button class="btn secondary" id="aiimg-salva" onclick="_aiImgSalva()" disabled>💾 Salva come nuova foto</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="openDetail('${catKey}','${id}')">← Torna alla scheda</button>
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+    </div>`, true);
+}
+async function _aiImgCaricaSorgente(){
+  if(_aiImg.srcB64) return;
+  const im=await new Promise((res,rej)=>{ const x=new Image(); x.crossOrigin='anonymous'; x.onload=()=>res(x); x.onerror=()=>rej(new Error('immagine non caricabile')); x.src=_aiImg.srcUrl; });
+  const max=1024; let w=im.naturalWidth||max, h=im.naturalHeight||max; const s=Math.min(1, max/Math.max(w,h));
+  w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
+  const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(im,0,0,w,h);
+  _aiImg.srcB64=c.toDataURL('image/jpeg',0.9).split(',')[1];
+}
+async function _aiImgGenera(mode){
+  if(!_aiImg || _aiImg.busy) return;
+  const cat=catByKey(_aiImg.catKey), o=objById(_aiImg.catKey,_aiImg.id), f=o?o.fields:{};
+  const out=document.getElementById('aiimg-out');
+  const amb=document.getElementById('aiimg-amb'), sco=document.getElementById('aiimg-sco'), sv=document.getElementById('aiimg-salva');
+  _aiImg.busy=true; [amb,sco,sv].forEach(b=>b&&(b.disabled=true));
+  if(out) out.innerHTML='<span class="note">⏳ Elaboro… (di norma 10–20 secondi)</span>';
+  try{
+    await _aiImgCaricaSorgente();
+    const hint=(document.getElementById('aiimg-hint')||{}).value||'';
+    const res=await fetch('/api/immagine',{ method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
+      body: JSON.stringify({ image:_aiImg.srcB64, mime:'image/jpeg', mode, tipo:(cat.sing+' — '+cat.label), titolo:f['Titolo']||'', hint }) });
+    if(res.status===401){ chiediPassword(); throw new Error('password non valida'); }
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status));
+    _aiImg.out={ image:j.image, mime:j.mime||'image/png' };
+    if(out) out.innerHTML=`<img src="data:${esc(_aiImg.out.mime)};base64,${_aiImg.out.image}">`;
+    if(sv) sv.disabled=false;
+  }catch(e){ if(out) out.innerHTML='<span class="note" style="color:var(--amber)">Errore: '+esc(e.message)+'</span>'; }
+  finally{ _aiImg.busy=false; if(amb) amb.disabled=false; if(sco) sco.disabled=false; }
+}
+async function _aiImgSalva(){
+  if(!_aiImg || !_aiImg.out) return;
+  const cat=catByKey(_aiImg.catKey), o=objById(_aiImg.catKey,_aiImg.id);
+  const ext=/png/i.test(_aiImg.out.mime)?'png':(/webp/i.test(_aiImg.out.mime)?'webp':'jpg');
+  const fn=`ambientazione-${o?codeStr(cat,o.fields):_aiImg.id}-${Date.now()}.${ext}`;
+  const sv=document.getElementById('aiimg-salva'); if(sv){ sv.disabled=true; sv.textContent='💾 Salvo…'; }
+  try{
+    await proxyUpload(_aiImg.id, cat.foto, _aiImg.out.mime, _aiImg.out.image, fn);
+    await ricaricaRecord(_aiImg.catKey, _aiImg.id);
+    toast('Immagine salvata come nuova foto ✓');
+    openDetail(_aiImg.catKey, _aiImg.id);
+  }catch(e){ toast('Salvataggio non riuscito: '+e.message); if(sv){ sv.disabled=false; sv.textContent='💾 Salva come nuova foto'; } }
 }
 function lightbox(url){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${esc(url)}">`; document.body.appendChild(d); }
 function patchRec(catKey, id, rec){ const arr=objs[catKey]; const i=arr.findIndex(x=>x.id===id); if(i>=0) arr[i]=rec; }
