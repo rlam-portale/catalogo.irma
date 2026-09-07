@@ -3560,17 +3560,19 @@ let _upscalerInst = null;
 async function _ensureUpscaler(){
   if(_upscalerInst) return _upscalerInst;
   await loadScript(CDN.tfjs);
+  await loadScript(CDN.upscalerModel);   // in UMD il modello va caricato e passato esplicitamente
   await loadScript(CDN.upscaler);
-  const U = window.Upscaler;
-  const Ctor = (U && U.default) ? U.default : U;
-  if(typeof Ctor !== 'function') throw new Error('libreria di upscaling non disponibile');
-  _upscalerInst = new Ctor();   // modello ESRGAN di default
+  const U = window.Upscaler;   const Ctor = (U && U.default) ? U.default : U;
+  const M = window.DefaultUpscalerJSModel; const model = (M && M.default) ? M.default : M;
+  if(typeof Ctor !== 'function') throw new Error('UpscalerJS non caricato (window.Upscaler assente)');
+  if(!model) throw new Error('modello di upscaling non caricato');
+  _upscalerInst = new Ctor({ model });
   return _upscalerInst;
 }
 async function _aiImgSalvaHD(){
   if(!_aiImg || !_aiImg.out || _aiImg.busy) return;
   const cat=catByKey(_aiImg.catKey), o=objById(_aiImg.catKey,_aiImg.id);
-  const hd=document.getElementById('aiimg-hd'), sv=document.getElementById('aiimg-salva');
+  const hd=document.getElementById('aiimg-hd'), sv=document.getElementById('aiimg-salva'), out=document.getElementById('aiimg-out');
   _aiImg.busy=true; if(hd){ hd.disabled=true; hd.textContent='⏳ Miglioro… (può richiedere un po\')'; } if(sv) sv.disabled=true;
   try{
     const up=await _ensureUpscaler();
@@ -3590,7 +3592,12 @@ async function _aiImgSalvaHD(){
     await ricaricaRecord(_aiImg.catKey,_aiImg.id);
     toast('Immagine ad alta risoluzione salvata ✓');
     openDetail(_aiImg.catKey,_aiImg.id);
-  }catch(e){ toast('Upscaling non riuscito: '+e.message); if(hd){ hd.disabled=false; hd.textContent='⬆ Migliora risoluzione (gratis)'; } if(sv) sv.disabled=false; }
+  }catch(e){
+    console.error('upscaling', e);
+    if(out) out.innerHTML='<span class="note" style="color:var(--amber)">Upscaling non riuscito: '+esc(e&&e.message?e.message:String(e))+'</span>';
+    toast('Upscaling non riuscito: '+(e&&e.message?e.message:e));
+    if(hd){ hd.disabled=false; hd.textContent='⬆ Migliora risoluzione (gratis)'; } if(sv) sv.disabled=false;
+  }
   finally{ _aiImg.busy=false; }
 }
 /* imposta una foto come copertina: la porta in prima posizione (la copertina è la 1ª foto) */
@@ -4240,7 +4247,8 @@ const CDN = {
   pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
   jspdf: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
   tfjs: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js',
-  upscaler: 'https://cdn.jsdelivr.net/npm/upscaler@1.0.0-beta.19/dist/browser/umd/upscaler.min.js'
+  upscaler: 'https://cdn.jsdelivr.net/npm/upscaler@latest/dist/browser/umd/upscaler.min.js',
+  upscalerModel: 'https://cdn.jsdelivr.net/npm/@upscalerjs/default-model@latest/dist/umd/index.min.js'
 };
 const loadedScripts = {};
 function loadScript(src){
