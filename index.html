@@ -3502,7 +3502,7 @@ async function apriAmbientazioneAI(catKey, id, attId){
       <button class="btn" id="aiimg-amb" onclick="_aiImgGenera('ambientazione')">🖼 Ambientazione studio</button>
       <button class="btn secondary" id="aiimg-sco" onclick="_aiImgGenera('scontorno')">◻ Rimuovi sfondo</button>
       <button class="btn secondary" id="aiimg-salva" onclick="_aiImgSalva()" disabled>💾 Salva come nuova foto</button>
-      <button class="btn secondary" id="aiimg-hd" onclick="_aiImgSalvaHD()" disabled title="Migliora la risoluzione con un upscaler gratuito nel browser e salva la nuova foto">⬆ Migliora risoluzione (gratis)</button>
+      <button class="btn secondary" id="aiimg-hd" onclick="_aiImgSalvaHD()" title="Migliora la risoluzione (del risultato se generato, altrimenti della foto di partenza) e salva come nuova foto">⬆ Migliora risoluzione (gratis)</button>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" style="margin-right:auto" onclick="openDetail('${catKey}','${id}')">← Torna alla scheda</button>
@@ -3570,13 +3570,17 @@ async function _ensureUpscaler(){
   return _upscalerInst;
 }
 async function _aiImgSalvaHD(){
-  if(!_aiImg || !_aiImg.out || _aiImg.busy) return;
+  if(!_aiImg || _aiImg.busy) return;
   const cat=catByKey(_aiImg.catKey), o=objById(_aiImg.catKey,_aiImg.id);
   const hd=document.getElementById('aiimg-hd'), sv=document.getElementById('aiimg-salva'), out=document.getElementById('aiimg-out');
   _aiImg.busy=true; if(hd){ hd.disabled=true; hd.textContent='⏳ Miglioro… (può richiedere un po\')'; } if(sv) sv.disabled=true;
   try{
     const up=await _ensureUpscaler();
-    const srcUrl=`data:${_aiImg.out.mime};base64,${_aiImg.out.image}`;
+    // usa il risultato AI se presente, altrimenti la foto di partenza
+    let baseB64, baseMime;
+    if(_aiImg.out){ baseB64=_aiImg.out.image; baseMime=_aiImg.out.mime; }
+    else { await _aiImgCaricaSorgente(); baseB64=_aiImg.srcB64; baseMime='image/jpeg'; }
+    const srcUrl=`data:${baseMime};base64,${baseB64}`;
     const imgEl=await new Promise((res,rej)=>{ const x=new Image(); x.onload=()=>res(x); x.onerror=()=>rej(new Error('immagine non valida')); x.src=srcUrl; });
     const big=await up.upscale(imgEl, { output:'base64', patchSize:64, padding:2,
       progress:(rate)=>{ if(hd) hd.textContent='⏳ Miglioro… '+Math.round((rate||0)*100)+'%'; } });
