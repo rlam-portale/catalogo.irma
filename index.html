@@ -189,8 +189,8 @@
     <div class="setupbox">
       <h2>Accesso al catalogo</h2>
       <p>Inserisci la <b>password condivisa</b> del catalogo. Viene ricordata su questo dispositivo:
-      su un nuovo PC (o un nuovo browser) va reinserita una sola volta. Il collegamento ad Airtable
-      e Discogs è gestito dal server, quindi non serve più alcun token qui.</p>
+      su un nuovo PC (o un nuovo browser) va reinserita una sola volta. Il collegamento al database
+      e ai servizi (Discogs, Spotify, AI) è gestito dal server, quindi non serve più alcun token qui.</p>
       <div class="field"><label>Password</label><input type="password" id="cfg-pw" placeholder="password" onkeydown="if(event.key==='Enter')saveConfig()"></div>
       <div style="display:flex; gap:10px; margin-top:6px">
         <button class="btn" onclick="saveConfig()">Entra</button>
@@ -647,7 +647,7 @@ async function api(path, opts={}, retry=0){
   if(res.status===429 && retry<3){ await new Promise(r=>setTimeout(r,1200)); return api(path,opts,retry+1); }
   if(res.status===401){ chiediPassword(); throw new Error('Password non valida: reinseriscila nelle Impostazioni.'); }
   if(!res.ok){
-    let msg = `Errore Airtable (${res.status})`;
+    let msg = `Errore database (${res.status})`;
     try{ const j = await res.json(); if(j.error) msg += ': ' + (j.error.message || j.error.type || JSON.stringify(j.error)); }catch(e){}
     throw new Error(msg);
   }
@@ -2346,6 +2346,16 @@ function renderAiPreview(){
   _aiRes._rows = rows; _aiRes._aRows = aRows;
 }
 function _numFromStr(s){ const m=String(s).replace(',','.').match(/-?\d+(\.\d+)?/); return m?Number(m[0]):null; }
+/* trova l'opzione ammessa che corrisponde a un valore proposto (i campi 'sel' su
+   Supabase accettano solo le scelte previste: niente più typecast come su Airtable) */
+function _matchSel(ch, val){
+  const v=String(val==null?'':val).trim(); if(!v) return null;
+  const low=v.toLowerCase();
+  let hit=ch.find(o=>String(o).toLowerCase()===low);
+  if(hit!==undefined) return hit;
+  hit=ch.find(o=>{ const ol=String(o).toLowerCase(); return low.includes(ol)||ol.includes(low); });
+  return (hit!==undefined)?hit:null;
+}
 async function applicaAi(){
   if(!_aiRes) return;
   const cat = catByKey(_aiRes.catKey); const id=_aiRes.id; const o=objById(_aiRes.catKey,id); if(!o) return;
@@ -2366,13 +2376,19 @@ async function applicaAi(){
     }
   }catch(e){ toast('Autore: '+e.message); }
   // 2) campi dell'opera + collegamento autore
-  const patch={};
+  const patch={}; const scartati=[];
   rows.forEach((r,i)=>{ const cb=document.getElementById('aiop-'+i); if(!cb||!cb.checked) return;
     const fld=cat.campi.find(x=>x.k===r.k);
+    if(fld && fld.t==='sel' && Array.isArray(fld.ch)){
+      const v=_matchSel(fld.ch, r.prop);            // i campi a scelta accettano SOLO le opzioni previste (vincolo del database)
+      if(v==null){ scartati.push(r.label+': «'+r.prop+'»'); return; }
+      patch[r.k]=v; return;
+    }
     patch[r.k] = (fld&&(fld.t==='num'||fld.t==='cur')) ? _numFromStr(r.prop) : String(r.prop);
   });
   if(aid){ patch[AUTORE_LINK]=[aid]; if(nomeAI && !f[cat.sub] && patch[cat.sub]===undefined) patch[cat.sub]=nomeAI; }
-  if(!Object.keys(patch).length){ toast('Nessun campo selezionato'); return; }
+  if(scartati.length) toast('Ignorati (valore non tra le opzioni ammesse): '+scartati.join(' · '));
+  if(!Object.keys(patch).length){ toast('Nessun campo valido da applicare'); return; }
   try{
     const j=await updateRec(cat.tbl,id,patch); patchRec(_aiRes.catKey,id,j);
     toast('✨ Scheda aggiornata dall\'AI'); fillFilters(); renderAll();
