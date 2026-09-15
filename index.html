@@ -545,6 +545,25 @@ const CAMPI = {
     {k:'Tipo di alloggiamento', l:'Tipo di alloggiamento', t:'sel', ch:['Bustina Mylar','Capsula','Slab','Cartoncino','Oblò','Vassoio','Altro']},
     {k:'Bibliografia specifica', l:'Bibliografia specifica', t:'area', full:1},
     {k:'Note storiche', l:'Note storiche', t:'area', full:1}
+  ],
+  preziosi: [
+    {k:'Tipologia', l:'Tipologia', t:'sel', ch:['Orologio da polso','Orologio da tasca','Pendola / orologio da tavolo','Anello','Collana','Bracciale','Orecchini','Spilla','Gemelli','Pietra / gemma sciolta','Oggetto prezioso','Altro']},
+    {k:'Marca', l:'Marca / maison'},
+    {k:'Modello o referenza', l:'Modello o referenza'},
+    {k:'Materiale', l:'Materiale', t:'sel', ch:['Oro giallo','Oro bianco','Oro rosa','Platino','Argento','Acciaio','Acciaio e oro','Altro']},
+    {k:'Titolo metallico o caratura', l:'Titolo metallico / caratura (es. 750, 18kt, 925)'},
+    {k:'Pietre e gemme', l:'Pietre e gemme', t:'area', full:1},
+    {k:'Peso g', l:'Peso (g)', t:'num'},
+    {k:'Punzoni e marchi', l:'Punzoni e marchi', t:'area', full:1},
+    {k:'Numero di serie', l:'Numero di serie'},
+    {k:'Movimento', l:'Movimento (orologi)', t:'sel', ch:['Manuale','Automatico','Quarzo','Non applicabile']},
+    {k:'Diametro cassa mm', l:'Diametro cassa (mm)', t:'num'},
+    {k:'Dimensioni', l:'Dimensioni / misure'},
+    {k:'Epoca o anno', l:'Epoca / anno'},
+    {k:'Stato di conservazione', l:'Stato di conservazione', t:'sel', ch:STATI_CONS},
+    {k:'Funzionante', l:'Funzionante (orologi)', t:'sel', ch:['Sì','No','Da revisionare','Non applicabile']},
+    {k:'Scatola e documenti', l:'Scatola e documenti', t:'sel', ch:['Completo (scatola e documenti)','Solo scatola','Solo documenti','Nessuno']},
+    {k:'Certificazione o perizia', l:'Certificazione / perizia'}
   ]
 };
 /* coda comune a tutte le categorie d'arte (dopo i campi specifici) */
@@ -607,7 +626,8 @@ const CAT = [
   {key:'accessori', tbl:'Accessori', label:'Accessori',                plur:'accessori', sing:'accessorio', prefix:'ACC', icon:'🪔', sub:'Categoria', foto:'Foto', campi:CAMPI.accessori, ai:true},
   {key:'ceramiche', tbl:'Ceramiche', label:'Ceramiche e porcellane',   plur:'ceramiche', sing:'ceramica', prefix:'CER', icon:'🏺', sub:'Manifattura', foto:'Foto', campi:CAMPI.ceramiche, ai:true},
   {key:'musica',    tbl:'Supporti Musicali', label:'Supporti musicali', plur:'supporti', sing:'supporto', prefix:'MUS', icon:'💿', sub:'Artista', foto:'Foto', campi:CAMPI.musica, musica:true, autore:true},
-  {key:'numismatica', tbl:'Numismatica', label:'Numismatica', plur:'monete', sing:'moneta', prefix:'NUM', icon:'🪙', sub:'Autorità emittente', foto:'Foto', campi:CAMPI.numismatica, ai:true}
+  {key:'numismatica', tbl:'Numismatica', label:'Numismatica', plur:'monete', sing:'moneta', prefix:'NUM', icon:'🪙', sub:'Autorità emittente', foto:'Foto', campi:CAMPI.numismatica, ai:true},
+  {key:'preziosi',  tbl:'Preziosi',  label:'Orologi, gioielli e preziosi', plur:'preziosi', sing:'bene prezioso', prefix:'PRZ', icon:'💎', sub:'Marca', foto:'Foto', campi:CAMPI.preziosi, ai:true}
 ];
 const catByKey = k => CAT.find(c=>c.key===k);
 const catByTbl = t => CAT.find(c=>c.tbl===t);
@@ -732,7 +752,12 @@ async function loadAll(force){
   if(!token || !base){ show('impostazioni'); return; }
   document.getElementById('catalog-loading').classList.remove('hidden');
   try{
-    const res = await Promise.all([ ...CAT.map(c=>listAll(c.tbl)), listAll(TBL.coll), listAll(TBL.prestiti), listAll(TBL.autori), listAll(TBL.strumenti) ]);
+    // allSettled: una sezione che non carica (es. tabella non ancora creata) non deve rompere tutto
+    const tbls = [ ...CAT.map(c=>c.tbl), TBL.coll, TBL.prestiti, TBL.autori, TBL.strumenti ];
+    const settled = await Promise.allSettled(tbls.map(t=>listAll(t)));
+    const authErr = settled.find(s=> s.status==='rejected' && /\b(401|403)\b/.test(String((s.reason&&s.reason.message)||'')));
+    if(authErr){ show('impostazioni'); document.getElementById('catalog-loading').classList.add('hidden'); return; }
+    const res = settled.map(s=> s.status==='fulfilled' ? s.value : []);
     CAT.forEach((c,i)=> objs[c.key] = res[i]);
     books = objs.libri;                 // stesso riferimento: il codice dei libri continua a funzionare
     colls = res[CAT.length];
@@ -740,6 +765,8 @@ async function loadAll(force){
     autori = res[CAT.length+2];
     strumenti = res[CAT.length+3] || [];
     loaded = true;
+    const falliti = settled.map((s,i)=> s.status==='rejected' ? tbls[i] : null).filter(Boolean);
+    if(falliti.length) toast('Sezioni non caricate (verifica la tabella): '+falliti.join(', '));
     fillFilters(); renderAll();
   }catch(e){ toast(e.message); if(String(e.message).includes('401')||String(e.message).includes('403')) show('impostazioni'); }
   document.getElementById('catalog-loading').classList.add('hidden');
@@ -1410,13 +1437,14 @@ const TABLER = {
   diamond:'<path d="M6 5h12l3 5l-8.5 9.5a.7 .7 0 0 1 -1 0l-8.5 -9.5l3 -5"/><path d="M10 12l-2 -2.2l.6 -1"/>',
   bottle:'<path d="M10 5h4v-2a1 1 0 0 0 -1 -1h-2a1 1 0 0 0 -1 1v2z"/><path d="M14 3.5c0 1.626 .507 3.212 1.45 4.537l.05 .07a8.093 8.093 0 0 1 1.5 4.694v6.199a2 2 0 0 1 -2 2h-6a2 2 0 0 1 -2 -2v-6.2c0 -1.682 .524 -3.322 1.5 -4.693l.05 -.07a7.823 7.823 0 0 0 1.45 -4.537"/><path d="M7 14.803a2.4 2.4 0 0 0 1 -.803a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 1 -.805"/>',
   search:'<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/>',
-  plus:'<path d="M12 5l0 14"/><path d="M5 12l14 0"/>'
+  plus:'<path d="M12 5l0 14"/><path d="M5 12l14 0"/>',
+  clock:'<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 7v5l3 3"/>'
 };
 function ti(name, size){
   const s = size || '1em';
   return `<svg class="ti" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TABLER[name]||''}</svg>`;
 }
-const SEZ_ICON = { libri:'books', quadri:'frame', tappeti:'stack-2', sculture:'hexagon', mobili:'armchair', accessori:'diamond', ceramiche:'bottle', musica:'disc', numismatica:'coin' };
+const SEZ_ICON = { libri:'books', quadri:'frame', tappeti:'stack-2', sculture:'hexagon', mobili:'armchair', accessori:'diamond', ceramiche:'bottle', musica:'disc', numismatica:'coin', preziosi:'clock' };
 const SEZ_BREVE = { quadri:'Quadri e stampe' };   // nomi accorciati per la home
 function sezNome(cat){ return SEZ_BREVE[cat.key] || cat.label; }
 
