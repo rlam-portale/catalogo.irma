@@ -687,12 +687,21 @@ async function spFetch(q, type='album', limit=8){
   if(!res.ok){ throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status)); }
   return j;
 }
-/* upload di un allegato via proxy (content.airtable.com) */
+/* tabella (nome) a cui appartiene un record, dai dati già in memoria: rende
+   l'upload deterministico anche per le sezioni nuove (niente deduzione a lato server) */
+function _tabellaDaRecordId(recordId){
+  for(const c of CAT){ if((objs[c.key]||[]).some(o=>o.id===recordId)) return c.tbl; }
+  if(typeof autori!=='undefined' && (autori||[]).some(a=>a.id===recordId)) return TBL.autori;
+  if(typeof strumenti!=='undefined' && (strumenti||[]).some(s=>s.id===recordId)) return TBL.strumenti;
+  return null;
+}
+/* upload di un allegato via proxy (storage Supabase, bucket `catalogo`) */
 async function proxyUpload(recordId, field, contentType, fileB64, filename){
+  const table = _tabellaDaRecordId(recordId) || undefined;   // se noto, evita la deduzione lato server
   const res = await fetch('/api/upload', {
     method:'POST',
     headers:{ 'x-app-password': appPw(), 'Content-Type':'application/json' },
-    body: JSON.stringify({ recordId, field, contentType, file: fileB64, filename })
+    body: JSON.stringify({ recordId, field, contentType, file: fileB64, filename, table })
   });
   if(res.status===401){ chiediPassword(); throw new Error('Password non valida.'); }
   if(!res.ok){ let m='Upload allegato fallito ('+res.status+')'; try{ const j=await res.json(); if(j.error) m+=': '+(j.error.message||j.error.type); }catch(e){} throw new Error(m); }
