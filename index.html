@@ -1991,6 +1991,7 @@ function openObjDetail(catKey, id){
       <button class="btn danger small left" onclick="delObj('${cat.key}','${id}')">Elimina</button>
       ${cat.ai?`<button class="btn secondary" onclick="openAiCompila('${cat.key}','${id}')">🤖 Compila con AI</button>`:''}
       <button class="btn secondary" onclick="stampaScheda('${cat.key}','${id}')">🖨 Stampa scheda (PDF)</button>
+      <button class="btn secondary" onclick="apriSpostaSezione('${cat.key}','${id}')">🔀 Sposta</button>
       <button class="btn secondary" onclick="openObjForm('${cat.key}','${id}')">✏️ Modifica</button>
       <button class="btn" onclick="closeModal()">Chiudi</button>
     </div>`, true);
@@ -2065,6 +2066,7 @@ function openMusicDetail(o){
       <button class="btn danger small left" onclick="delObj('musica','${id}')">Elimina</button>
       ${cat.ai?`<button class="btn secondary" onclick="openAiCompila('musica','${id}')">🤖 Compila con AI</button>`:''}
       <button class="btn secondary" onclick="stampaScheda('musica','${id}')">🖨 Stampa scheda (PDF)</button>
+      <button class="btn secondary" onclick="apriSpostaSezione('musica','${id}')">🔀 Sposta</button>
       <button class="btn secondary" onclick="openObjForm('musica','${id}')">✏️ Modifica</button>
       <button class="btn" onclick="closeModal()">Chiudi</button>
     </div>`, true);
@@ -3671,6 +3673,57 @@ async function impostaCopertina(catKey, id, attId){
     toast('Copertina aggiornata ✓');
     openDetail(catKey, id);
   }catch(e){ toast('Cambio copertina non riuscito: '+e.message); }
+}
+
+/* ===== Sposta un pezzo in un'altra sezione =====
+   Ricrea il record nella tabella di destinazione (campi comuni mappati, i
+   campi specifici non presenti finiscono nelle Note), trasferisce foto/
+   documenti/collocazione e assegna un nuovo codice; poi elimina l'originale. */
+function apriSpostaSezione(catKey, id){
+  const fromCat=catByKey(catKey), o=objById(catKey,id); if(!o) return;
+  const opts=CAT.filter(c=>c.key!==catKey && c.campi).map(c=>`<option value="${c.key}">${c.icon} ${esc(c.label)}</option>`).join('');
+  modal(`<h2>🔀 Sposta in un'altra sezione</h2>
+    <p class="note">Sposti «<b>${esc(o.fields['Titolo']||'')}</b>» da <b>${esc(fromCat.label)}</b> a un'altra sezione. Vengono trasferiti <b>foto, documenti, collocazione</b> e i <b>campi in comune</b>; i campi specifici non presenti nella destinazione finiscono nelle <b>Note</b> (nulla va perso). Viene assegnato un <b>nuovo codice</b> della sezione di destinazione; il codice attuale non verrà riusato.</p>
+    <div class="field"><label>Sposta in</label><select id="sp-target">${opts}</select></div>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="openDetail('${catKey}','${id}')">← Annulla</button>
+      <button class="btn" id="sp-go" onclick="spostaSezione('${catKey}','${id}',document.getElementById('sp-target').value)">🔀 Sposta</button>
+    </div>`, true);
+}
+async function spostaSezione(catKey, id, toKey){
+  const fromCat=catByKey(catKey), toCat=catByKey(toKey), o=objById(catKey,id);
+  if(!o || !toCat || !toCat.campi) return;
+  const f=o.fields;
+  const targetMap={}; ['Titolo'].concat(toCat.campi.map(c=>c.k)).forEach(k=>targetMap[k]=true);
+  const targetFld={}; toCat.campi.forEach(c=>targetFld[c.k]=c);
+  const data={}; const extra=[];
+  if(f['Titolo']!=null && f['Titolo']!=='') data['Titolo']=f['Titolo'];
+  (fromCat.campi||[]).forEach(sc=>{
+    if(sc.k==='Titolo') return;
+    const v=f[sc.k]; if(v===undefined||v===null||v==='') return;
+    if(targetMap[sc.k]){
+      const tf=targetFld[sc.k];
+      if(tf && tf.t==='sel' && Array.isArray(tf.ch)){ const mv=_matchSel(tf.ch, v); if(mv==null){ extra.push(sc.l+': '+v); return; } data[sc.k]=mv; return; }
+      data[sc.k]=v; return;
+    }
+    extra.push(sc.l+': '+v);   // campo assente nella destinazione → in Nota
+  });
+  if(extra.length){ const base=data['Note']||''; data['Note']=(base?base+'\n\n':'')+'[Dati dalla sezione «'+fromCat.label+'»]\n'+extra.join('\n'); }
+  const coll=f['Collocazione']||[]; if(coll.length) data['Collocazione']=coll;
+  const btn=document.getElementById('sp-go'); if(btn){ btn.disabled=true; btn.textContent='🔀 Sposto…'; }
+  try{
+    const n=await ultimoCodice(toCat.tbl); data['Codice']=n+1;
+    const res=await fetch('/api/sposta',{ method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
+      body: JSON.stringify({ fromTable:fromCat.tbl, recordId:id, toTable:toCat.tbl, data }) });
+    if(res.status===401){ chiediPassword(); throw new Error('password non valida'); }
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+res.status));
+    objs[catKey]=(objs[catKey]||[]).filter(x=>x.id!==id);
+    if(j.record){ (objs[toKey]=objs[toKey]||[]).push(j.record); }
+    toast('Spostato in '+toCat.label+' ✓');
+    fillFilters(); renderAll();
+    if(j.record) openDetail(toKey, j.record.id); else { closeModal(); renderAll(); }
+  }catch(e){ toast('Spostamento non riuscito: '+e.message); if(btn){ btn.disabled=false; btn.textContent='🔀 Sposta'; } }
 }
 
 /* ===== Misura & quota: righello (calibrazione su riferimento noto) + stima AI + immagine quotata ===== */
