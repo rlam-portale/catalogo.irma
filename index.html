@@ -4552,7 +4552,8 @@ const CDN = {
   jspdf: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
   tfjs: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js',
   upscaler: 'https://cdn.jsdelivr.net/npm/upscaler@latest/dist/browser/umd/upscaler.min.js',
-  upscalerModel: 'https://cdn.jsdelivr.net/npm/@upscalerjs/default-model@latest/dist/umd/index.min.js'
+  upscalerModel: 'https://cdn.jsdelivr.net/npm/@upscalerjs/default-model@latest/dist/umd/index.min.js',
+  heic2any: 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'
 };
 const loadedScripts = {};
 function loadScript(src){
@@ -4565,15 +4566,33 @@ function loadScript(src){
   return loadedScripts[src];
 }
 
-async function fileToCanvas(file, maxSide){
-  // 'from-image' applica l'orientamento EXIF: le foto da telefono non restano storte
-  const bmp = await createImageBitmap(file, {imageOrientation:'from-image'}).catch(()=>createImageBitmap(file));
-  const k = Math.min(1, maxSide/Math.max(bmp.width,bmp.height));
-  const c = document.createElement('canvas');
-  c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
-  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
-  bmp.close();
+function _drawScaled(src, w, h, maxSide){
+  const k=Math.min(1, maxSide/Math.max(w,h));
+  const c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(w*k)); c.height=Math.max(1,Math.round(h*k));
+  c.getContext('2d').drawImage(src,0,0,c.width,c.height);
   return c;
+}
+async function _imgToCanvas(file, maxSide){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{ const x=new Image(); x.onload=()=>res(x); x.onerror=()=>rej(new Error('decode')); x.src=url; });
+    if(!img.naturalWidth||!img.naturalHeight) return null;
+    return _drawScaled(img, img.naturalWidth, img.naturalHeight, maxSide);   // il browser applica l'orientamento EXIF
+  } finally { URL.revokeObjectURL(url); }
+}
+async function fileToCanvas(file, maxSide){
+  // 1) createImageBitmap con orientamento EXIF (le foto da telefono non restano storte)
+  try{ const bmp=await createImageBitmap(file, {imageOrientation:'from-image'}); const c=_drawScaled(bmp,bmp.width,bmp.height,maxSide); bmp.close(); return c; }catch(e){}
+  // 2) ripiego via <img> — Safari (iPhone) decodifica anche gli HEIC nativamente
+  try{ const c=await _imgToCanvas(file, maxSide); if(c) return c; }catch(e){}
+  // 3) conversione HEIC→JPEG per i browser che non decodificano HEIC (es. Android/Chrome)
+  try{
+    await loadScript(CDN.heic2any);
+    if(window.heic2any){ const out=await window.heic2any({ blob:file, toType:'image/jpeg', quality:0.9 });
+      const blob=Array.isArray(out)?out[0]:out; const c=await _imgToCanvas(blob, maxSide); if(c) return c; }
+  }catch(e){}
+  throw new Error('Immagine non leggibile (formato non supportato). Prova a convertirla in JPEG.');
 }
 function rotateCanvas(c, deg){
   const r = document.createElement('canvas');
