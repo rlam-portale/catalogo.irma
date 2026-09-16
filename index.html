@@ -795,6 +795,7 @@ async function loadAll(force){
     const falliti = settled.map((s,i)=> s.status==='rejected' ? tbls[i] : null).filter(Boolean);
     if(falliti.length) toast('Sezioni non caricate (verifica la tabella): '+falliti.join(', '));
     fillFilters(); renderAll();
+    try{ _acqResumeCheck(); }catch(e){}   // riprende l'acquisizione rapida dopo un reload (iOS)
   }catch(e){ toast(e.message); if(String(e.message).includes('401')||String(e.message).includes('403')) show('impostazioni'); }
   document.getElementById('catalog-loading').classList.add('hidden');
 }
@@ -4053,31 +4054,44 @@ async function refreshDetail(catKey, id){
   if(catKey==='libri') openBookDetail(id); else openObjDetail(catKey, id);
   renderCatalog(); renderTiles();
 }
-function pickFiles(accept, cb){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept=accept; inp.multiple=true;
-  inp.onchange=()=>{ if(inp.files.length) cb([...inp.files]); };
+/* l'input va ATTACCATO al DOM: su iOS/Android un input staccato a volte non
+   emette 'change'. Lo teniamo nascosto e lo rimuoviamo dopo la scelta. */
+function _fileInput(cb, opts){
+  const inp=document.createElement('input'); inp.type='file';
+  inp.accept=opts.accept||'image/*'; if(opts.multiple) inp.multiple=true; if(opts.capture) inp.setAttribute('capture','environment');
+  inp.style.cssText='position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px';
+  document.body.appendChild(inp);
+  inp.onchange=()=>{ const files=inp.files?[...inp.files]:[]; setTimeout(()=>{ try{inp.remove();}catch(e){} },0); if(files.length) cb(files); };
   inp.click();
 }
+function pickFiles(accept, cb){ _fileInput(cb, {accept, multiple:true}); }
 /* apre direttamente la fotocamera posteriore del telefono (uno scatto per volta) */
-function pickCamera(cb){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.setAttribute('capture','environment');
-  inp.onchange=()=>{ if(inp.files.length) cb([...inp.files]); };
-  inp.click();
-}
+function pickCamera(cb){ _fileInput(cb, {accept:'image/*', capture:true}); }
 
 /* ================== ACQUISIZIONE RAPIDA (cellulare, solo foto) ==================
    Pensata per catalogare tante monete al volo dal telefono: crea una scheda
    «Da catalogare» con codice automatico e vi carica solo le fotografie.
    I dettagli e l'analisi AI si completano dopo, con calma, dal computer. */
+function _acqSave(){ try{ if(_acq) sessionStorage.setItem('acqResume', JSON.stringify({catKey:_acq.catKey, id:_acq.id})); }catch(e){} }
+function _acqChiudi(){ try{ sessionStorage.removeItem('acqResume'); }catch(e){} _acq=null; closeModal(); renderAll(); }
+/* dopo un ricaricamento della pagina (tipico di iOS quando apre la fotocamera)
+   ripristina la sessione di acquisizione rapida: stesso pezzo, foto già caricate. */
+function _acqResumeCheck(){
+  let s=null; try{ s=JSON.parse(sessionStorage.getItem('acqResume')||'null'); }catch(e){}
+  if(!s || !s.catKey || !catByKey(s.catKey)) return;
+  acquisizioneRapida(s.catKey);
+  if(s.id){ const cat=catByKey(s.catKey), o=objById(s.catKey, s.id);
+    if(o){ _acq.id=s.id; _acq.code=codeStr(cat,o.fields); _acq.count=(o.fields[cat.foto]||[]).length; _acqRender(); } }
+}
 function acquisizioneRapida(catKey){
   const cat = catByKey(catKey); if(!cat) return;
-  _acq = { catKey, id:null, code:'', count:0 };
+  _acq = { catKey, id:null, code:'', count:0 }; _acqSave();
   modal(`
     <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px">
       <h2 style="margin:0; flex:1; min-width:160px">📷 Acquisizione rapida — ${esc(cat.label)}</h2>
-      <button class="btn secondary" onclick="closeModal(); renderAll()">Chiudi</button>
+      <button class="btn secondary" onclick="_acqChiudi()">Chiudi</button>
     </div>
-    <p class="note" style="margin-top:0">Scatta o carica solo le <b>fotografie</b>. La scheda viene creata con titolo «Da catalogare» e codice automatico; nome, dettagli, ritaglio e analisi AI li completi con calma dal computer.</p>
+    <p class="note" style="margin-top:0">Scatta o carica solo le <b>fotografie</b>. La scheda viene creata con titolo «Da catalogare» e codice automatico; nome, dettagli, ritaglio e analisi AI li completi con calma dal computer. <b>Suggerimento iPhone:</b> se dopo lo scatto l'app si ricarica, la sessione viene ripristinata da sola.</p>
     <div id="acq-stato" style="font-size:14px; margin:6px 0 12px; color:var(--muted)">Pronto per il primo pezzo.</div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px">
       <button class="btn" style="flex:1; min-width:150px; font-size:17px; padding:16px" onclick="_acqScatta()">📷 Scatta foto</button>
@@ -4086,14 +4100,14 @@ function acquisizioneRapida(catKey){
     <div id="acq-foto" class="gallery"></div>
     <div class="modal-actions">
       <button class="btn secondary" onclick="_acqNuovo()">➕ Nuovo pezzo</button>
-      <button class="btn" onclick="closeModal(); renderAll()">✓ Fine</button>
+      <button class="btn" onclick="_acqChiudi()">✓ Fine</button>
     </div>`);
 }
 function _acqScatta(){ pickCamera(files=>_acqCarica(files)); }
 function _acqGalleria(){ pickFiles('image/*', files=>_acqCarica(files)); }
 function _acqNuovo(){
   if(!_acq || !_acq.id){ toast('Scatta almeno una foto di questo pezzo'); return; }
-  _acq = { catKey:_acq.catKey, id:null, code:'', count:0 };
+  _acq = { catKey:_acq.catKey, id:null, code:'', count:0 }; _acqSave();
   _acqRender(); toast('Pronto per un nuovo pezzo');
 }
 async function _acqCarica(files){
@@ -4105,7 +4119,7 @@ async function _acqCarica(files){
       if(stato) stato.textContent = 'Creo la scheda…';
       const [rec] = await creaInTabella(cat.tbl, [{ 'Titolo':'Da catalogare' }]);
       objs[_acq.catKey].push(rec);
-      _acq.id = rec.id; _acq.code = codeStr(cat, rec.fields); _acq.count = 0;
+      _acq.id = rec.id; _acq.code = codeStr(cat, rec.fields); _acq.count = 0; _acqSave();
     }
     for(const file of files){
       if(stato) stato.textContent = `Carico foto ${_acq.count+1}…`;
