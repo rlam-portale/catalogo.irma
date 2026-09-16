@@ -219,6 +219,7 @@
       </select>
       <button id="sez-add" class="btn" onclick="aggiungiSezioneCorrente()">➕ Aggiungi</button>
       <button class="btn secondary small" onclick="acquisizioneRapida(catFiltro)">📷 Rapida (solo foto)</button>
+      <button class="btn secondary small" id="ai-batch-btn" onclick="apriBatchAi(catFiltro)">🤖 AI in blocco</button>
       <button class="btn secondary small" onclick="apriStampaCatalogo()">🖨 Stampa</button>
       <button class="btn secondary small" onclick="apriInventario()">📋 Inventario</button>
       <button class="btn secondary small" onclick="apriEtichette()">🏷 Etichette</button>
@@ -1707,6 +1708,7 @@ function renderCatalog(){
   cont.classList.toggle('fitta', catFiltro==='numismatica');   // monete: schede quadrate
   const _cc = catByKey(catFiltro), _ba = document.getElementById('sez-add');
   if(_ba) _ba.textContent = '➕ Aggiungi ' + (_cc ? _cc.sing : '');
+  const _aib = document.getElementById('ai-batch-btn'); if(_aib) _aib.style.display = (_cc && _cc.ai) ? '' : 'none';   // AI in blocco solo dove l'AI è attiva
   const _tl=document.getElementById('tiles'); if(_tl) _tl.style.display='none';   // dentro una sezione: sintesi al posto delle tiles globali
   if(_cc) renderTestata(_cc);
   if(catFiltro==='musica'){ if(mfBox){ mfBox.style.display=''; popolaFiltriMusica(); } }
@@ -2349,6 +2351,113 @@ async function avviaAi(catKey, id){
     renderAiPreview();
   }catch(e){ if(out) out.innerHTML = '<p class="note" style="color:var(--red)">❌ '+esc(e.message)+'</p>'; }
   finally{ _aiBusy = false; if(btn){ btn.disabled=false; btn.textContent='🔁 Rianalizza'; } }
+}
+
+/* ===== Analisi AI in blocco (batch) ===== */
+let _aiBatchStop=false;
+function _aiHaFoto(cat,o){ return ((o.fields[cat.foto]||[]).length)>0; }
+function _aiDaCatalogare(cat,o){
+  const f=o.fields; const t=String(f['Titolo']||'').trim();
+  if(!t || /^da catalogare$/i.test(t)) return true;
+  let n=0; (cat.campi||[]).forEach(c=>{ if(c.k==='Titolo') return; const v=f[c.k]; if(v!==undefined&&v!==null&&v!=='') n++; });
+  return n<=2;
+}
+/* applica in modo automatico i risultati AI: di default SOLO ai campi vuoti (non sovrascrive) */
+async function _aiApplicaResult(cat, id, result, soloVuoti){
+  const o=objById(cat.key,id); if(!o) return 0; const f=o.fields;
+  const opera=result.opera||{}; const patch={};
+  const skip=new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato','Fonti']);
+  if(opera['Titolo']){ const cur=String(f['Titolo']||'').trim(); if(!cur||/^da catalogare$/i.test(cur)) patch['Titolo']=String(opera['Titolo']); }
+  cat.campi.forEach(c=>{
+    if(skip.has(c.k)) return;
+    const prop=opera[c.k]; if(prop===undefined||prop===null||prop==='') return;
+    const cur=f[c.k];
+    if(soloVuoti && cur!==undefined && cur!==null && cur!=='') return;   // non sovrascrive i dati esistenti
+    let val;
+    if(c.t==='sel' && Array.isArray(c.ch)){ const mv=_matchSel(c.ch,prop); if(mv==null) return; val=mv; }
+    else if(c.t==='num'||c.t==='cur'){ val=_numFromStr(prop); if(val===''||val==null||Number.isNaN(val)) return; }
+    else val=String(prop);
+    patch[c.k]=val;
+  });
+  const fonti=(result.fonti||[]).filter(Boolean);
+  if(fonti.length && cat.campi.some(c=>c.k==='Fonti') && !f['Fonti']) patch['Fonti']=fonti.join('\n');
+  // autore d'archivio (per le categorie che lo prevedono)
+  if(cat.autore){
+    const au=result.autore||{}; const nome=(au.Nome||'').trim();
+    if(nome){
+      let aid=(f[AUTORE_LINK]||[])[0];
+      if(!aid){ const m=autori.find(a=>(a.fields['Nome']||'').toLowerCase()===nome.toLowerCase()); if(m) aid=m.id; }
+      if(!aid){ try{ const extra={}; ['Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{ if(au[k]) extra[k]=au[k]; }); const j=await createRec(TBL.autori,{Nome:nome,...extra}); autori.push(j.records[0]); aid=j.records[0].id; }catch(e){} }
+      else { const a=autoreById(aid); if(a){ const ap={}; ['Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{ if(au[k] && !a.fields[k]) ap[k]=au[k]; }); if(Object.keys(ap).length){ try{ const j=await updateRec(TBL.autori,aid,ap); const idx=autori.findIndex(x=>x.id===aid); if(idx>=0) autori[idx]=j; }catch(e){} } } }
+      if(aid && !(f[AUTORE_LINK]||[]).length) patch[AUTORE_LINK]=[aid];
+      if(aid && !f[cat.sub]) patch[cat.sub]=nome;
+    }
+  }
+  if(!Object.keys(patch).length) return 0;
+  const j=await updateRec(cat.tbl,id,patch); patchRec(cat.key,id,j);
+  return Object.keys(patch).length;
+}
+async function _aiAnalizzaUno(catKey, id, soloVuoti){
+  const cat=catByKey(catKey), o=objById(catKey,id); if(!o) return {err:'assente'};
+  const f=o.fields; const imageUrls=_imgUrlsRecord(cat,f);
+  if(!imageUrls.length) return {skip:true};
+  const docUrls=(f['Documenti']||[]).slice(0,3).map(a=>a.url).filter(Boolean);
+  const skip=new Set(['Data acquisizione','Prezzo acquisto','Data stima','Valore stimato','Fonti']);
+  const campi=cat.campi.filter(c=>!skip.has(c.k)).map(c=>({k:c.k,l:c.l,t:c.t||'text',ch:c.ch}));
+  const curr={'Titolo':f['Titolo']||''}; cat.campi.forEach(c=>{ const v=f[c.k]; if(v!==undefined&&v!==null&&v!=='') curr[c.k]=v; });
+  let autore={}; const aid=(f[AUTORE_LINK]||[])[0]; const a=aid&&autoreById(aid);
+  if(a){ ['Nome','Nascita','Morte','Nazionalità','Biografia','Note'].forEach(k=>{ if(a.fields[k]) autore[k]=a.fields[k]; }); }
+  try{
+    const r=await fetch('/api/ai',{ method:'POST', headers:{'x-app-password':appPw(),'Content-Type':'application/json'},
+      body: JSON.stringify({ catKey, catLabel:cat.label, sing:cat.sing, titolo:f['Titolo']||'', hints:'', imageUrl:imageUrls[0], imageUrls, docUrls, campi, currentFields:curr, autore, hasAutore:!!cat.autore }) });
+    if(r.status===401){ chiediPassword(); return {err:'password'}; }
+    const txt=await r.text(); let j=null; try{ j=JSON.parse(txt); }catch(e){}
+    if(!j || !r.ok) return {err:(j&&j.error&&j.error.message)||('HTTP '+r.status)};
+    const result=j.result||{};
+    ['opera','autore'].forEach(sec=>{ const ob=result[sec]; if(ob&&typeof ob==='object') Object.keys(ob).forEach(k=>{ if(typeof ob[k]==='string') ob[k]=pulisciCite(ob[k]); }); });
+    const n=await _aiApplicaResult(cat,id,result,soloVuoti);
+    return {applied:n, conf:result.confidenza||''};
+  }catch(e){ return {err:e.message}; }
+}
+function apriBatchAi(catKey){
+  const cat=catByKey(catKey); if(!cat||!cat.ai){ toast('In questa sezione l\'analisi AI non è disponibile.'); return; }
+  const all=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields) && _aiHaFoto(cat,o));
+  if(!all.length){ toast('Nessuna scheda con foto in questa sezione (l\'AI ha bisogno di almeno una foto).'); return; }
+  const daCat=all.filter(o=>_aiDaCatalogare(cat,o));
+  modal(`<h2>🤖 Analisi AI in blocco — ${esc(cat.label)}</h2>
+    <p class="note">Analizza automaticamente più schede e <b>compila i campi vuoti</b> (senza sovrascrivere ciò che hai già inserito). Ogni analisi osserva le foto e cerca sul web: richiede vari secondi a scheda, quindi il batch può durare a lungo — puoi fermarlo quando vuoi. <b>Verifica sempre</b> i risultati aprendo le singole schede.</p>
+    <label style="display:block;margin:8px 0"><input type="radio" name="ai-scope" value="dacat" checked> Solo schede da catalogare — vuote o «Da catalogare» (${daCat.length})</label>
+    <label style="display:block;margin:8px 0"><input type="radio" name="ai-scope" value="tutte"> Tutte le schede con foto (${all.length})</label>
+    <label style="display:block;margin:8px 0"><input type="checkbox" id="ai-overwrite"> Sovrascrivi anche i campi già compilati</label>
+    <div id="ai-batch-prog" class="note" style="margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" style="margin-right:auto" onclick="closeModal(); renderAll()">Chiudi</button>
+      <button class="btn" id="ai-batch-go" onclick="avviaBatchAi('${catKey}')">▶ Avvia</button>
+    </div>`, true);
+}
+async function avviaBatchAi(catKey){
+  const cat=catByKey(catKey); if(!cat) return;
+  const scope=(document.querySelector('input[name=ai-scope]:checked')||{}).value||'dacat';
+  const soloVuoti=!(document.getElementById('ai-overwrite')||{}).checked;
+  let all=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields) && _aiHaFoto(cat,o));
+  if(scope==='dacat') all=all.filter(o=>_aiDaCatalogare(cat,o));
+  if(!all.length){ toast('Nessuna scheda idonea.'); return; }
+  if(!confirm('Analizzo con l\'AI '+all.length+' schede'+(soloVuoti?' (solo campi vuoti)':' (sovrascrivendo anche i campi già compilati)')+'.\nPuò durare diversi minuti; lascia la finestra aperta. Procedo?')) return;
+  window._aiBatchStop=false;
+  const go=document.getElementById('ai-batch-go'); if(go){ go.textContent='⏹ Ferma'; go.setAttribute('onclick','_aiBatchStop=true'); }
+  const prog=document.getElementById('ai-batch-prog');
+  let ok=0, vuoti=0, err=0, i=0;
+  for(const o of all){
+    if(window._aiBatchStop) break;
+    i++;
+    if(prog) prog.innerHTML=`Analizzo <b>${i}/${all.length}</b> · ${esc(codeStr(cat,o.fields))} ${esc(String(o.fields['Titolo']||'').slice(0,40))}<br>compilate ${ok} · nessuna modifica ${vuoti} · errori ${err}`;
+    const res=await _aiAnalizzaUno(catKey, o.id, soloVuoti);
+    if(res.err) err++; else if(res.skip){} else if(res.applied>0) ok++; else vuoti++;
+    try{ fillFilters(); renderTiles(); renderCatalog(); }catch(e){}
+    await new Promise(r=>setTimeout(r,400));
+  }
+  if(prog) prog.innerHTML=`Fatto: <b>${ok}</b> schede compilate · ${vuoti} senza modifiche · ${err} errori (su ${i}).<br><span class="note">Rivedi i risultati aprendo le singole schede; puoi rilanciare per completare quelle rimaste.</span>`;
+  if(go){ go.textContent='✓ Chiudi'; go.setAttribute('onclick','closeModal(); renderAll()'); }
 }
 function renderAiPreview(){
   const out = document.getElementById('ai-out'); if(!out || !_aiRes) return;
