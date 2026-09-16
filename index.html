@@ -2435,29 +2435,41 @@ function apriBatchAi(catKey){
       <button class="btn" id="ai-batch-go" onclick="avviaBatchAi('${catKey}')">▶ Avvia</button>
     </div>`, true);
 }
+/* indicatore fluttuante del batch (persiste anche chiudendo la finestra) */
+function _aiHud(html, done){
+  let el=document.getElementById('ai-hud');
+  if(!el){ el=document.createElement('div'); el.id='ai-hud'; el.className='ai-hud'; document.body.appendChild(el); }
+  el.innerHTML = `<div class="ai-hud-txt">${html}</div>` + (done
+    ? `<button class="btn small" onclick="document.getElementById('ai-hud').remove()">Chiudi</button>`
+    : `<button class="btn small secondary" onclick="window._aiBatchStop=true">⏹ Ferma</button>`);
+}
 async function avviaBatchAi(catKey){
   const cat=catByKey(catKey); if(!cat) return;
+  if(window._aiBatchRunning){ toast('Un\'analisi in blocco è già in corso.'); return; }
   const scope=(document.querySelector('input[name=ai-scope]:checked')||{}).value||'dacat';
   const soloVuoti=!(document.getElementById('ai-overwrite')||{}).checked;
   let all=(objs[catKey]||[]).filter(o=>posseduto(catKey,o.fields) && _aiHaFoto(cat,o));
   if(scope==='dacat') all=all.filter(o=>_aiDaCatalogare(cat,o));
   if(!all.length){ toast('Nessuna scheda idonea.'); return; }
-  if(!confirm('Analizzo con l\'AI '+all.length+' schede'+(soloVuoti?' (solo campi vuoti)':' (sovrascrivendo anche i campi già compilati)')+'.\nPuò durare diversi minuti; lascia la finestra aperta. Procedo?')) return;
-  window._aiBatchStop=false;
-  const go=document.getElementById('ai-batch-go'); if(go){ go.textContent='⏹ Ferma'; go.setAttribute('onclick','_aiBatchStop=true'); }
-  const prog=document.getElementById('ai-batch-prog');
+  if(!confirm('Analizzo con l\'AI '+all.length+' schede'+(soloVuoti?' (solo campi vuoti)':' (sovrascrivendo anche i campi già compilati)')+'.\nGira in sottofondo: puoi chiudere questa finestra e continuare a lavorare. Procedo?')) return;
+  window._aiBatchStop=false; window._aiBatchRunning=true;
+  closeModal();   // il batch prosegue in sottofondo con l'indicatore fluttuante
+  const modaleAperta=()=>!!document.querySelector('#modal-root .overlay');
   let ok=0, vuoti=0, err=0, i=0;
+  const aggiorna=()=>_aiHud(`🤖 <b>AI in blocco</b> — ${esc(cat.label)}<br>${i}/${all.length} · compilate ${ok} · errori ${err}`);
+  aggiorna();
   for(const o of all){
     if(window._aiBatchStop) break;
-    i++;
-    if(prog) prog.innerHTML=`Analizzo <b>${i}/${all.length}</b> · ${esc(codeStr(cat,o.fields))} ${esc(String(o.fields['Titolo']||'').slice(0,40))}<br>compilate ${ok} · nessuna modifica ${vuoti} · errori ${err}`;
+    i++; aggiorna();
     const res=await _aiAnalizzaUno(catKey, o.id, soloVuoti);
     if(res.err) err++; else if(res.skip){} else if(res.applied>0) ok++; else vuoti++;
-    try{ fillFilters(); renderTiles(); renderCatalog(); }catch(e){}
+    // aggiorna il catalogo solo se non stai facendo altro (nessuna finestra aperta) e sei in questa sezione
+    if(!modaleAperta() && catFiltro===catKey){ try{ fillFilters(); renderTiles(); renderCatalog(); }catch(e){} }
     await new Promise(r=>setTimeout(r,400));
   }
-  if(prog) prog.innerHTML=`Fatto: <b>${ok}</b> schede compilate · ${vuoti} senza modifiche · ${err} errori (su ${i}).<br><span class="note">Rivedi i risultati aprendo le singole schede; puoi rilanciare per completare quelle rimaste.</span>`;
-  if(go){ go.textContent='✓ Chiudi'; go.setAttribute('onclick','closeModal(); renderAll()'); }
+  window._aiBatchRunning=false;
+  _aiHud(`✅ <b>AI in blocco</b> finita — ${esc(cat.label)}<br>${ok} compilate · ${vuoti} invariate · ${err} errori (su ${i})`, true);
+  if(!modaleAperta()){ try{ fillFilters(); renderAll(); }catch(e){} }
 }
 function renderAiPreview(){
   const out = document.getElementById('ai-out'); if(!out || !_aiRes) return;

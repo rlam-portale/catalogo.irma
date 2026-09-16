@@ -361,6 +361,12 @@ table.tab-num td:first-child{ font-family:var(--f-mono); color:var(--ink-medio);
 .mis-chip{ background:var(--sup-quieta); border:1px solid var(--line); border-radius:999px; padding:3px 10px; font-size:13px; }
 .mis-chip button{ border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; margin-left:4px; }
 .mis-chip button:hover{ color:var(--red); }
+/* indicatore fluttuante dell'analisi AI in blocco (gira in sottofondo) */
+.ai-hud{ position:fixed; left:16px; bottom:16px; z-index:1200; max-width:min(360px,92vw);
+  background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.28);
+  padding:11px 13px; display:flex; align-items:center; gap:12px; font-size:13px; color:var(--ink); }
+.ai-hud-txt{ flex:1 1 auto; line-height:1.35; }
+.ai-hud .btn{ flex:0 0 auto; }
 
 /* ===== Sezione Strumenti di lavoro EON (beni aziendali, distinti) ===== */
 .eon-banner{ background:var(--acc-velo); border:1px solid var(--accent); border-left:4px solid var(--accent);
