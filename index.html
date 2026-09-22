@@ -3049,9 +3049,10 @@ body{ font-family:'Josefin Sans','Helvetica Neue',Arial,sans-serif; font-weight:
 .ban .top{ margin-bottom:4mm; } .ban .ttl{ -webkit-line-clamp:2; } .ban .ttl:not(.sm):not(.xs){ font-size:28pt; } .ban .sub{ margin-bottom:0; }
 .banrow{ display:flex; gap:5mm; align-items:flex-start; margin-bottom:5mm; } .excol{ display:flex; flex-direction:column; gap:4mm; }
 .low{ display:grid; grid-template-columns:1fr 110mm; gap:10mm; align-items:start; } .low .desc{ -webkit-line-clamp:5; } .low .card{ margin-top:0; }
-.cover .cv-tx{ position:absolute; z-index:1; left:14mm; top:50%; transform:translateY(-50%); width:118mm; }
+.cover .bgph{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.cover .velo{ position:absolute; inset:0; background:linear-gradient(90deg, rgba(231,219,215,.95) 0%, rgba(231,219,215,.88) 36%, rgba(231,219,215,.45) 62%, rgba(231,219,215,.08) 100%); }
+.cover .cv-tx{ position:absolute; z-index:1; left:14mm; top:50%; transform:translateY(-50%); width:135mm; }
 .cover .cv-sub{ font-size:13pt; font-weight:300; letter-spacing:.06em; line-height:1.4; }
-.cover .cv-ph{ position:absolute; z-index:1; right:14mm; top:24mm; bottom:16mm; width:150mm; display:flex; align-items:center; justify-content:center; }
 .intro .in-body{ position:absolute; z-index:1; top:24mm; left:14mm; right:14mm; bottom:12mm; }
 .intro .strip{ display:flex; gap:5mm; margin-bottom:5mm; }
 .intro .in-tx{ font-size:11pt; line-height:1.6; letter-spacing:.04em; text-align:justify; margin:0 0 6mm; white-space:pre-line; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:7; overflow:hidden; }
@@ -3101,13 +3102,14 @@ async function stampaCatalogoElegante(catKey, fromN, toN, includiStima, intro){
   const H=[]; let pn=0;
   const tutteFoto=[]; for(const {items} of sezioni) for(const o of items) for(const u of fotoDi[o.id]){ const p=pic(u); if(p) tutteFoto.push(p); }
 
-  // copertina
+  // copertina e chiusura: foto a tutta pagina (come nel modello), scelte fra quelle
+  // di proporzioni più vicine al foglio, così il ritaglio è minimo
+  const A4=297/210, vicine=[...tutteFoto].sort((a,b)=>Math.abs(Math.log(a.ar/A4))-Math.abs(Math.log(b.ar/A4)));
+  const cop=vicine[0]||null, ult=(cop && vicine.find(p=>p.url!==cop.url))||cop;   // chiusura: una foto diversa, se c'è
   pn++;
-  const cop=tutteFoto[0]||null; let copHtml='';
-  if(cop){ const [w,h]=fitBox(cop,150,166); copHtml=`<div class="cv-ph">${box(cop,w,h)}</div>`; }
-  H.push(`<section class="pg cover">${hd(COLLEZIONE,'Pagina '+pn)}${onde('bl')}
+  H.push(`<section class="pg cover">${cop?`<img class="bgph" src="${esc(cop.url)}" alt="">`:''}<div class="velo"></div>${hd(COLLEZIONE,'Pagina '+pn)}${onde('bl')}
     <div class="cv-tx"><div class="kicker">Catalogo Dajlani Arezzo</div><h1 class="big">Catalogo</h1>
-    <div class="cv-sub">${esc(titoloCat)}<br>${esc(COLLEZIONE)}, ${esc(LUOGO)} · ${esc(meseAnno)}</div></div>${copHtml}</section>`);
+    <div class="cv-sub">${esc(titoloCat)}<br>${esc(COLLEZIONE)}, ${esc(LUOGO)} · ${esc(meseAnno)}</div></div></section>`);
 
   // presentazione (facoltativa)
   if(String(intro||'').trim()){
@@ -3199,9 +3201,8 @@ async function stampaCatalogoElegante(catKey, fromN, toN, includiStima, intro){
 
   // chiusura
   pn++;
-  const ult=tutteFoto[tutteFoto.length-1]||null;
   H.push(`<section class="pg fine">${ult?`<img class="bgph" src="${esc(ult.url)}" alt="">`:''}<div class="velo"></div>${hd(COLLEZIONE,'Pagina '+pn)}
-    <div class="fn-tx"><h1 class="big">Catalogo Dajlani Arezzo</h1><div class="fn-sub">${esc(titoloCat)}</div>
+    <div class="fn-tx"><h1 class="big">Grazie per<br>la visione</h1><div class="fn-sub">Catalogo Dajlani Arezzo · ${esc(titoloCat)}</div>
       <div class="row"><span>${esc(COLLEZIONE)} di ${esc(PROPRIETARIO)}</span><i>${ELEG_ICO.user}</i></div>
       <div class="row"><span>${esc(LUOGO)}</span><i>${ELEG_ICO.pin}</i></div>
       <div class="row"><span>${esc(plur(totItems,'esemplare','esemplari'))} in ${esc(plur(sezioni.length,'sezione','sezioni'))}</span><i>${ELEG_ICO.grid}</i></div>
