@@ -3070,14 +3070,14 @@ body{ font-family:'Josefin Sans','Helvetica Neue',Arial,sans-serif; font-weight:
 .divis .mos.n1{ display:flex; align-items:center; justify-content:center; } .divis .mos.n2{ grid-template-rows:1fr; } .divis .mos.n2.largo{ grid-template-columns:1fr; grid-template-rows:1fr 1fr; } .divis .mos.n3 .cell:nth-child(3){ grid-column:1/-1; }
 .divis .cell{ overflow:hidden; background:var(--ph); } .divis .cell img{ width:100%; height:100%; object-fit:cover; display:block; }
 .fine{ background:var(--dark); } .fine .bgph{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.fine .velo{ position:absolute; inset:0; background:linear-gradient(90deg, rgba(58,40,32,.35), rgba(58,40,32,.72)); }
+.fine .velo{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(58,40,32,.22) 0%, rgba(58,40,32,.12) 50%, rgba(58,40,32,.72) 100%); }
 .fine .hd{ color:#F1ECE9; }
-.fine .fn-tx{ position:absolute; z-index:1; right:14mm; top:50%; transform:translateY(-50%); width:150mm; text-align:right; color:#F6F1EE; }
-.fine .big{ font-size:44pt; }
-.fine .fn-sub{ font-size:14pt; font-weight:600; letter-spacing:.06em; margin-bottom:10mm; }
-.fine .row{ display:flex; justify-content:flex-end; align-items:center; gap:4mm; margin-bottom:6mm; font-size:11pt; font-weight:600; letter-spacing:.14em; text-transform:uppercase; }
-.fine .row i{ width:9mm; height:9mm; border-radius:50%; background:#F1ECE9; display:flex; align-items:center; justify-content:center; flex:none; }
-.fine .row svg{ width:4.6mm; height:4.6mm; fill:none; stroke:var(--dark); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.fine .fn-tx{ position:absolute; z-index:1; right:14mm; bottom:12mm; width:200mm; text-align:right; color:#F6F1EE; }
+.fine .fn-sub{ font-size:9.5pt; font-weight:600; letter-spacing:.16em; text-transform:uppercase; margin-bottom:4mm; }
+.fine .row{ display:flex; justify-content:flex-end; align-items:center; gap:3mm; margin-bottom:2.5mm; font-size:8pt; font-weight:400; letter-spacing:.14em; text-transform:uppercase; }
+.fine .row:last-child{ margin-bottom:0; }
+.fine .row i{ width:6mm; height:6mm; border-radius:50%; background:#F1ECE9; display:flex; align-items:center; justify-content:center; flex:none; }
+.fine .row svg{ width:3.2mm; height:3.2mm; fill:none; stroke:var(--dark); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 `;
 const ELEG_ICO = {
   user:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
@@ -3207,7 +3207,7 @@ async function stampaCatalogoElegante(catKey, fromN, toN, includiStima, intro){
   // chiusura
   pn++;
   H.push(`<section class="pg fine">${ult?`<img class="bgph" src="${esc(ult.url)}" alt="">`:''}<div class="velo"></div>${hd(COLLEZIONE,'Pagina '+pn)}
-    <div class="fn-tx"><h1 class="big">Grazie per<br>la visione</h1><div class="fn-sub">Catalogo Dajlani Arezzo · ${esc(titoloCat)}</div>
+    <div class="fn-tx"><div class="fn-sub">Catalogo Dajlani Arezzo · ${esc(titoloCat)}</div>
       <div class="row"><span>${esc(COLLEZIONE)} di ${esc(PROPRIETARIO)}</span><i>${ELEG_ICO.user}</i></div>
       <div class="row"><span>${esc(LUOGO)}</span><i>${ELEG_ICO.pin}</i></div>
       <div class="row"><span>${esc(plur(totItems,'esemplare','esemplari'))} in ${esc(plur(sezioni.length,'sezione','sezioni'))}</span><i>${ELEG_ICO.grid}</i></div>
