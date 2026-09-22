@@ -2823,39 +2823,48 @@ function apriStampaCatalogo(){
   const def = (catFiltro && catByKey(catFiltro)) ? catFiltro : '';
   const opts = `<option value="" ${!def?'selected':''}>▦ Tutte le sezioni (catalogo completo)</option>`
     + CAT.map(c=>`<option value="${c.key}" ${c.key===def?'selected':''}>${c.icon} ${esc(c.label)}</option>`).join('');
+  const intro = store('cat_intro') || '';
   modal(`
-    <h2>🖨 Stampa catalogo compatto</h2>
-    <p class="note">Elenco impaginato, <b>5 esemplari per pagina</b>, con miniatura e dati essenziali. Scegli una sezione o l'intera collezione (ogni sezione parte da pagina nuova). L'intervallo di codici vale solo per una singola sezione.</p>
+    <h2>🖨 Stampa catalogo</h2>
     <div class="frow">
+      <div class="field" style="grid-column:1/-1"><label>Formato</label>
+        <select id="sc-fmt" onchange="onScFmtChange()">
+          <option value="elegante" selected>✨ Elegante — una pagina per pezzo, A4 orizzontale, stile brochure</option>
+          <option value="compatto">▤ Compatto — elenco con miniature, 5 esemplari per pagina (PDF)</option>
+        </select></div>
+      <p class="note" id="sc-note" style="grid-column:1/-1; margin:0"></p>
       <div class="field" style="grid-column:1/-1"><label>Categoria</label><select id="sc-cat">${opts}</select></div>
       <div class="field"><label>Da codice n. (opzionale)</label><input id="sc-from" type="number" min="1" placeholder="es. 1"></div>
       <div class="field"><label>A codice n. (opzionale)</label><input id="sc-to" type="number" min="1" placeholder="es. 20"></div>
       <div class="field" style="grid-column:1/-1"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink)"><input type="checkbox" id="sc-stima" checked style="width:auto"> Includi il valore stimato</label></div>
+      <div class="field" id="sc-intro-box" style="grid-column:1/-1"><label>Testo di presentazione (facoltativo — pagina introduttiva «La collezione»)</label><textarea id="sc-intro" style="min-height:70px" placeholder="Poche righe sulla collezione: storia, criteri, luogo…">${esc(intro)}</textarea></div>
     </div>
     <div class="modal-actions">
       <button class="btn secondary" onclick="closeModal()">Annulla</button>
-      <button class="btn" onclick="avviaStampaCatalogo()">📄 Genera PDF</button>
+      <button class="btn" onclick="avviaStampaCatalogo()">📄 Genera</button>
     </div>`);
+  onScFmtChange();
+}
+function onScFmtChange(){
+  const eleg = (document.getElementById('sc-fmt')||{}).value!=='compatto';
+  const note=document.getElementById('sc-note'); if(note) note.innerHTML = eleg
+    ? 'Copertina, eventuale presentazione, un <b>divisorio per sezione</b> e <b>una pagina per pezzo</b> con foto grande, titolo, testo e scheda dei dettagli. Si apre un\'anteprima; il PDF si salva dal dialogo di stampa del browser. L\'intervallo di codici vale solo per una singola sezione.'
+    : 'Elenco impaginato, <b>5 esemplari per pagina</b>, con miniatura e dati essenziali (ogni sezione parte da pagina nuova). L\'intervallo di codici vale solo per una singola sezione.';
+  const box=document.getElementById('sc-intro-box'); if(box) box.style.display = eleg ? '' : 'none';
 }
 function avviaStampaCatalogo(){
   const k = document.getElementById('sc-cat').value;
   const from = Number(document.getElementById('sc-from').value)||0;
   const to = Number(document.getElementById('sc-to').value)||0;
   const stima = !!(document.getElementById('sc-stima')||{}).checked;
+  const fmt = (document.getElementById('sc-fmt')||{}).value || 'compatto';
+  const intro = (document.getElementById('sc-intro')||{}).value || '';
+  store('cat_intro', intro);
   closeModal();
-  stampaCatalogo(k, from, to, stima);
+  if(fmt==='compatto') stampaCatalogo(k, from, to, stima); else stampaCatalogoElegante(k, from, to, stima, intro);
 }
 async function stampaCatalogo(catKey, fromN, toN, includiStima){
-  const cats = catKey ? [catByKey(catKey)].filter(Boolean) : CAT;
-  if(!cats.length) return;
-  // elenco per sezione (l'intervallo di codici vale solo per una singola sezione)
-  const sezioni = [];
-  for(const cat of cats){
-    let its=(objs[cat.key]||[]).filter(o=>posseduto(cat.key,o.fields));
-    if(catKey){ its=its.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN&&c<fromN)return false; if(toN&&c>toN)return false; return true; }); }
-    its.sort((a,b)=>(a.fields['Codice']||0)-(b.fields['Codice']||0));
-    if(its.length) sezioni.push({cat, items:its});
-  }
+  const sezioni = _sezioniStampa(catKey, fromN, toN);
   const totItems = sezioni.reduce((s,z)=>s+z.items.length,0);
   if(!totItems){ toast('Nessun oggetto da stampare'); return; }
   toast('Preparo il catalogo… (' + totItems + ' esemplari)');
@@ -2904,14 +2913,11 @@ async function stampaCatalogo(catKey, fromN, toN, includiStima){
     doc.setFont('times','italic'); doc.setFontSize(9.5); doc.setTextColor(muted[0],muted[1],muted[2]);
     if(f[cat.sub]) doc.text(doc.splitTextToSize(String(f[cat.sub]), tw)[0], tx, rowTop+11);
     const parts=[];
-    for(const fld of cat.campi){
+    for(const fld of campiStampa(cat)){
       if(fld.t==='area') continue;
       if(fld.k==='Valore stimato' && !includiStima) continue;   // opzione: escludi valore di stima
-      const v=f[fld.k]; if(v===undefined||v===null||v==='') continue;
-      let disp=v;
-      if(fld.t==='date') disp=fmtDate(v); else if(fld.t==='cur') disp=fmtCur(v);
-      else if(fld.t==='num' && /cm$/.test(fld.k)) disp=v+' cm'; else if(fld.t==='num' && /kg$/.test(fld.k)) disp=v+' kg';
-      parts.push([fld.l, String(disp)]);
+      const v=f[fld.k]; if(v===undefined||v===null||v===''||(Array.isArray(v)&&!v.length)) continue;
+      parts.push([fld.l, _valStampa(fld,v)]);
     }
     // disposizione tabellare a 2 colonne: etichetta | valore allineati, valori troncati con ellissi
     doc.setFontSize(7.4);
@@ -2953,6 +2959,284 @@ async function stampaCatalogo(catKey, fromN, toN, includiStima){
       <a class="btn" href="${url}" download="${escAttr(nome)}.pdf">⬇ Scarica PDF</a>
     </div>`, true);
   toast('📄 Catalogo generato');
+}
+
+
+/* ---- Stampa catalogo "elegante": una pagina per pezzo, A4 orizzontale, stile brochure ----
+   Produce un documento HTML autonomo (font Playfair Display + Josefin Sans da Google Fonts,
+   foto prese dal database) mostrato in anteprima; la stampa e il PDF passano dal dialogo di
+   stampa del browser («Salva come PDF»), che conserva testo vettoriale e foto a piena risoluzione.
+   Impaginazione: copertina · presentazione (facoltativa) · divisorio di sezione (se più sezioni) ·
+   una pagina per pezzo (foto a lato o a nastro secondo il formato della foto) · pagina di chiusura. */
+const ELEG_NASCOSTI = new Set(['Prezzo acquisto','Data acquisizione','Data stima','Data di catalogazione','Codice a barre','Copertina','Fonti','Informazioni biografiche sull\'autore']);
+const ELEG_DESCR = { quadri:['Soggetto'], tappeti:['Decoro'], sculture:['Note'], mobili:['Caratteristiche'], accessori:['Note'], ceramiche:['Decoro'], musica:['Crediti','Tracklist'], numismatica:['Dritto — descrizione','Rovescio — descrizione'], preziosi:['Pietre e gemme','Note'], elettronica:['Specifiche tecniche','Note'], libri:['Descrizione'] };
+const ELEG_EPOCA = ['Epoca','Epoca o anno','Anno o epoca','Datazione','Stile e epoca','Anno','Anno di rilascio','Anno o millesimo'];
+/* I Libri non hanno un elenco CAMPI (modulo dedicato): campi essenziali per le stampe di catalogo. */
+const CAMPI_LIBRI_STAMPA = [ {k:'Editore',l:'Editore'}, {k:'Anno',l:'Anno'}, {k:'ISBN',l:'ISBN'}, {k:'Pagine',l:'Pagine'}, {k:'Lingua',l:'Lingua'}, {k:'Genere',l:'Genere'}, {k:'Descrizione',l:'Descrizione',t:'area'}, {k:'Note',l:'Note',t:'area'} ];
+function campiStampa(cat){ return cat.campi || (cat.biblio ? CAMPI_LIBRI_STAMPA : []); }
+/* Elenco per sezione degli oggetti da stampare (l'intervallo di codici vale solo per una singola sezione). */
+function _sezioniStampa(catKey, fromN, toN){
+  const cats = catKey ? [catByKey(catKey)].filter(Boolean) : CAT;
+  const sezioni = [];
+  for(const cat of cats){
+    let its=(objs[cat.key]||[]).filter(o=>posseduto(cat.key,o.fields));
+    if(catKey){ its=its.filter(o=>{ const c=Number(o.fields['Codice'])||0; if(fromN&&c<fromN)return false; if(toN&&c>toN)return false; return true; }); }
+    its.sort((a,b)=>(a.fields['Codice']||0)-(b.fields['Codice']||0));
+    if(its.length) sezioni.push({cat, items:its});
+  }
+  return sezioni;
+}
+/* Valore di un campo in forma leggibile (date, valute, unità di misura, elenchi). */
+function _valStampa(fld, v){
+  if(Array.isArray(v)) return v.join(', ');
+  if(fld.t==='date') return fmtDate(v);
+  if(fld.t==='cur') return fmtCur(v);
+  if(fld.t==='num'){ if(/cm$/.test(fld.k)) return v+' cm'; if(/kg$/.test(fld.k)) return v+' kg'; if(/mm$/.test(fld.k)) return v+' mm'; if(/\sg$/.test(fld.k)) return v+' g'; }
+  return String(v);
+}
+/* Foto di un pezzo (fino a 4 URL): allegati immagine, altrimenti la copertina esterna (libri, dischi). */
+function _fotoElegante(cat, f){
+  const atts=(f[cat.foto]||[]).filter(a=>a && a.url && (!a.type || /^image\//.test(a.type)));
+  const urls=atts.map(a=>a.url);
+  if(!urls.length){ const c=coverSrc(cat,f); if(c) urls.push(c.replace('&w=600&','&w=1400&')); }
+  return urls.slice(0,4);
+}
+/* Precarica le foto (max 6 alla volta) e ne restituisce le misure reali: servono per impaginare. */
+async function _precaricaFoto(urls, onStep){
+  const out={}; let done=0; const list=[...new Set(urls.filter(Boolean))]; const tot=list.length;
+  const worker=async()=>{ while(list.length){ const u=list.shift();
+    try{ const im=await new Promise((res,rej)=>{ const x=new Image(); x.onload=()=>res(x); x.onerror=()=>rej(new Error('img')); x.src=u; }); out[u]={w:im.naturalWidth,h:im.naturalHeight}; }
+    catch(e){ out[u]=null; }
+    done++; if(onStep) onStep(done, tot); } };
+  await Promise.all(Array.from({length:Math.min(6,tot)}, worker));
+  return out;
+}
+const ELEG_CSS = `
+:root{ --bg:#E7DBD7; --ink:#2C2828; --muted:#5E5553; --dark:#2B2929; --ph:#DDD0CB; }
+*{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+html,body{ margin:0; padding:0; }
+body{ font-family:'Josefin Sans','Helvetica Neue',Arial,sans-serif; font-weight:400; color:var(--ink); background:#cfc7c4; -webkit-font-smoothing:antialiased; }
+#wrap{ padding:12px 0; }
+.pg{ position:relative; width:297mm; height:210mm; overflow:hidden; background:var(--bg); margin:0 auto 14px; box-shadow:0 6px 24px rgba(0,0,0,.28); page-break-after:always; break-after:page; }
+.pg:last-child{ page-break-after:auto; break-after:auto; }
+@page{ size:297mm 210mm; margin:0; }
+@media print{ body{ background:none; } #wrap{ padding:0; zoom:1 !important; } .pg{ margin:0; box-shadow:none; } }
+.onde{ position:absolute; width:150mm; height:150mm; fill:none; stroke:#fff; stroke-width:.6; opacity:.5; pointer-events:none; z-index:0; }
+.onde.tl{ left:-12mm; top:-12mm; } .onde.tr{ right:-12mm; top:-12mm; transform:scaleX(-1); } .onde.bl{ left:-12mm; bottom:-12mm; transform:scaleY(-1); } .onde.br{ right:-12mm; bottom:-12mm; transform:scale(-1,-1); }
+.hd{ position:absolute; z-index:2; top:11mm; left:14mm; right:14mm; display:flex; justify-content:space-between; gap:10mm; font-size:11pt; font-weight:300; letter-spacing:.08em; color:#4B4441; }
+.hd span:first-child{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ttl{ font-family:'Playfair Display',Georgia,serif; font-weight:400; text-transform:uppercase; font-size:34pt; line-height:1.04; margin:0 0 3mm; letter-spacing:.01em; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden; }
+.ttl.md{ font-size:28pt; } .ttl.sm{ font-size:22pt; } .ttl.xs{ font-size:18pt; }
+.big{ font-family:'Playfair Display',Georgia,serif; font-weight:400; text-transform:uppercase; font-size:60pt; line-height:1; margin:0 0 4mm; letter-spacing:.01em; }
+.kicker{ font-size:14pt; font-weight:600; letter-spacing:.32em; text-transform:uppercase; margin-bottom:5mm; }
+.sub{ font-size:11.5pt; font-weight:300; letter-spacing:.06em; margin-bottom:5mm; color:#4B4441; }
+.desc{ font-size:10.5pt; line-height:1.55; letter-spacing:.03em; text-align:justify; margin:0 0 5mm; white-space:pre-line; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:8; overflow:hidden; }
+.body{ position:absolute; z-index:1; top:24mm; left:14mm; right:14mm; bottom:12mm; }
+.side{ display:grid; gap:10mm; align-items:start; grid-template-rows:100%; }
+.side.L{ grid-template-columns:120mm 1fr; } .side.R{ grid-template-columns:1fr 120mm; } .side.R .ph{ order:2; }
+.ph{ height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4mm; }
+.tx{ height:100%; display:flex; flex-direction:column; min-width:0; }
+.pbox{ overflow:hidden; background:var(--ph); flex:none; } .pbox img{ width:100%; height:100%; object-fit:cover; display:block; }
+.extras{ display:flex; gap:4mm; justify-content:center; }
+.nofoto{ width:120mm; height:90mm; display:flex; align-items:center; justify-content:center; border:1px solid rgba(0,0,0,.12); color:#8A7F7B; font-weight:300; letter-spacing:.1em; text-transform:uppercase; font-size:9pt; }
+.card{ background:var(--dark); color:#F1ECE9; padding:7mm 8mm 6mm; margin-top:auto; }
+.card h3,.specs h3{ font-size:12pt; font-weight:600; margin:0 0 2.5mm; letter-spacing:.04em; }
+.specs h3{ font-weight:400; color:#4B4441; }
+.card ul,.specs ul{ list-style:none; margin:0; padding:0; }
+.card li,.specs li{ font-size:9.8pt; line-height:1.6; letter-spacing:.04em; padding-left:5mm; position:relative; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.card li::before,.specs li::before{ content:'•'; position:absolute; left:1mm; }
+.card b,.specs b{ font-weight:600; }
+.ban .top{ margin-bottom:4mm; } .ban .ttl{ -webkit-line-clamp:2; } .ban .ttl:not(.sm):not(.xs){ font-size:28pt; } .ban .sub{ margin-bottom:0; }
+.banrow{ display:flex; gap:5mm; align-items:flex-start; margin-bottom:5mm; } .excol{ display:flex; flex-direction:column; gap:4mm; }
+.low{ display:grid; grid-template-columns:1fr 110mm; gap:10mm; align-items:start; } .low .desc{ -webkit-line-clamp:5; } .low .card{ margin-top:0; }
+.cover .cv-tx{ position:absolute; z-index:1; left:14mm; top:50%; transform:translateY(-50%); width:118mm; }
+.cover .cv-sub{ font-size:13pt; font-weight:300; letter-spacing:.06em; line-height:1.4; }
+.cover .cv-ph{ position:absolute; z-index:1; right:14mm; top:24mm; bottom:16mm; width:150mm; display:flex; align-items:center; justify-content:center; }
+.intro .in-body{ position:absolute; z-index:1; top:24mm; left:14mm; right:14mm; bottom:12mm; }
+.intro .strip{ display:flex; gap:5mm; margin-bottom:5mm; }
+.intro .in-tx{ font-size:11pt; line-height:1.6; letter-spacing:.04em; text-align:justify; margin:0 0 6mm; white-space:pre-line; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:7; overflow:hidden; }
+.chips{ display:flex; flex-wrap:wrap; gap:4mm 10mm; }
+.chip{ display:inline-flex; align-items:center; gap:2.5mm; font-size:8.5pt; letter-spacing:.14em; text-transform:uppercase; }
+.chip i{ width:5mm; height:5mm; border-radius:50%; background:var(--dark); position:relative; flex:none; }
+.chip i::after{ content:''; position:absolute; left:1.7mm; top:1mm; width:1.3mm; height:2.3mm; border:solid #fff; border-width:0 .5mm .5mm 0; transform:rotate(45deg); }
+.divis .dv-tx{ position:absolute; z-index:1; left:14mm; top:50%; transform:translateY(-50%); width:118mm; }
+.divis .dv-tx .ttl{ font-size:38pt; -webkit-line-clamp:3; }
+.divis .mos{ position:absolute; z-index:1; right:14mm; top:24mm; width:150mm; height:170mm; display:grid; gap:4mm; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; }
+.divis .mos.n1{ display:flex; align-items:center; justify-content:center; } .divis .mos.n2{ grid-template-rows:1fr; } .divis .mos.n2.largo{ grid-template-columns:1fr; grid-template-rows:1fr 1fr; } .divis .mos.n3 .cell:nth-child(3){ grid-column:1/-1; }
+.divis .cell{ overflow:hidden; background:var(--ph); } .divis .cell img{ width:100%; height:100%; object-fit:cover; display:block; }
+.fine{ background:var(--dark); } .fine .bgph{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.fine .velo{ position:absolute; inset:0; background:linear-gradient(90deg, rgba(58,40,32,.35), rgba(58,40,32,.72)); }
+.fine .hd{ color:#F1ECE9; }
+.fine .fn-tx{ position:absolute; z-index:1; right:14mm; top:50%; transform:translateY(-50%); width:150mm; text-align:right; color:#F6F1EE; }
+.fine .big{ font-size:44pt; }
+.fine .fn-sub{ font-size:14pt; font-weight:600; letter-spacing:.06em; margin-bottom:10mm; }
+.fine .row{ display:flex; justify-content:flex-end; align-items:center; gap:4mm; margin-bottom:6mm; font-size:11pt; font-weight:600; letter-spacing:.14em; text-transform:uppercase; }
+.fine .row i{ width:9mm; height:9mm; border-radius:50%; background:#F1ECE9; display:flex; align-items:center; justify-content:center; flex:none; }
+.fine .row svg{ width:4.6mm; height:4.6mm; fill:none; stroke:var(--dark); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+`;
+const ELEG_ICO = {
+  user:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+  pin:'<svg viewBox="0 0 24 24"><path d="M12 22s7-7 7-12a7 7 0 0 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  grid:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>',
+  cal:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>'
+};
+let _elegHtml = '';
+async function stampaCatalogoElegante(catKey, fromN, toN, includiStima, intro){
+  const sezioni=_sezioniStampa(catKey, fromN, toN);
+  const totItems=sezioni.reduce((s,z)=>s+z.items.length,0);
+  if(!totItems){ toast('Nessun oggetto da stampare'); return; }
+  const fotoDi={}, urls=[];
+  for(const {cat,items} of sezioni) for(const o of items){ const u=_fotoElegante(cat,o.fields); fotoDi[o.id]=u; urls.push(...u); }
+  toast('Preparo il catalogo… (' + totItems + ' esemplari)');
+  const dims=await _precaricaFoto(urls, (n,tot)=>{ if(n%8===0 || n===tot) toast(`Carico le foto… ${n}/${tot}`); });
+  const pic=u=>{ const d=dims[u]; return (d && d.w && d.h) ? {url:u, ar:d.w/d.h} : null; };
+  const fitBox=(p,maxW,maxH)=>{ const w=Math.min(maxW, maxH*p.ar); return [w, w/p.ar]; };
+  const box=(p,w,h,cls)=> p ? `<div class="pbox${cls?' '+cls:''}" style="width:${w.toFixed(1)}mm;height:${h.toFixed(1)}mm"><img src="${esc(p.url)}" alt=""></div>` : '';
+  const hd=(l,r)=>`<div class="hd"><span>${esc(l)}</span><span>${esc(r)}</span></div>`;
+  const onde=pos=>`<svg class="onde ${pos}" viewBox="0 0 300 300" aria-hidden="true">${Array.from({length:16},(_,i)=>`<circle cx="0" cy="0" r="${60+i*13}"/>`).join('')}</svg>`;
+  const oggi=new Date().toLocaleDateString('it-IT',{day:'2-digit',month:'long',year:'numeric'});
+  const meseAnno=new Date().toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+  const titoloCat = catKey ? sezioni[0].cat.label : 'La collezione completa';
+  const plur=(n,s,p)=> n+' '+(n===1?s:p);
+  const H=[]; let pn=0;
+  const tutteFoto=[]; for(const {items} of sezioni) for(const o of items) for(const u of fotoDi[o.id]){ const p=pic(u); if(p) tutteFoto.push(p); }
+
+  // copertina
+  pn++;
+  const cop=tutteFoto[0]||null; let copHtml='';
+  if(cop){ const [w,h]=fitBox(cop,150,166); copHtml=`<div class="cv-ph">${box(cop,w,h)}</div>`; }
+  H.push(`<section class="pg cover">${hd(COLLEZIONE,'Pagina '+pn)}${onde('bl')}
+    <div class="cv-tx"><div class="kicker">Catalogo Dajlani Arezzo</div><h1 class="big">Catalogo</h1>
+    <div class="cv-sub">${esc(titoloCat)}<br>${esc(COLLEZIONE)}, ${esc(LUOGO)} · ${esc(meseAnno)}</div></div>${copHtml}</section>`);
+
+  // presentazione (facoltativa)
+  if(String(intro||'').trim()){
+    pn++; let bb='';
+    // nastro di foto (le più orizzontali per prime), alte 76 mm, finché stanno nella larghezza
+    const strip=[]; let larg=0;
+    for(const p of [...tutteFoto].sort((a,b)=>b.ar-a.ar)){ const [w,h]=fitBox(p,269,76); if(larg+w+(strip.length?5:0)>269) continue; strip.push(box(p,w,h)); larg+=w+(strip.length>1?5:0); if(strip.length>=4) break; }
+    if(strip.length) bb=`<div class="strip">${strip.join('')}</div>`;
+    const chips=[plur(totItems,'esemplare','esemplari'), plur(sezioni.length,'sezione','sezioni'), COLLEZIONE+' · '+LUOGO, 'Stampa del '+oggi];
+    H.push(`<section class="pg intro">${hd(COLLEZIONE,'Pagina '+pn)}${onde('tr')}
+      <div class="in-body"><h1 class="ttl md">La collezione</h1>${bb}<p class="in-tx">${esc(String(intro).trim())}</p>
+      <div class="chips">${chips.map(c=>`<span class="chip"><i></i>${esc(c)}</span>`).join('')}</div></div></section>`);
+  }
+
+  const divisorio = sezioni.length>1;
+  for(const {cat,items} of sezioni){
+    const campi=campiStampa(cat);
+    if(divisorio){
+      pn++;
+      const ps=[]; for(const o of items){ for(const u of fotoDi[o.id]){ const p=pic(u); if(p){ ps.push(p); break; } } if(ps.length>=4) break; }
+      const codici = `${codeStr(cat,items[0].fields)} – ${codeStr(cat,items[items.length-1].fields)}`;
+      // mosaico: 1 foto intera (senza ritagli); 2 foto affiancate o sovrapposte secondo il formato; 3–4 a griglia
+      let mos='';
+      if(ps.length===1){ const [w,h]=fitBox(ps[0],150,170); mos=`<div class="mos n1">${box(ps[0],w,h)}</div>`; }
+      else if(ps.length){ const largo = ps.length===2 && (ps[0].ar+ps[1].ar)/2>1.2 ? ' largo' : ''; mos=`<div class="mos n${ps.length}${largo}">${ps.map(p=>`<div class="cell"><img src="${esc(p.url)}" alt=""></div>`).join('')}</div>`; }
+      H.push(`<section class="pg divis">${hd(COLLEZIONE,'Pagina '+pn)}${onde('bl')}
+        <div class="dv-tx"><div class="kicker">Sezione</div><h1 class="ttl">${esc(cat.label)}</h1>
+        <div class="sub">${esc(plur(items.length,'esemplare','esemplari'))} · codici ${esc(codici)}</div></div>${mos}</section>`);
+    }
+    let lato=0;
+    for(const o of items){
+      pn++;
+      const f=o.fields;
+      const fotos=fotoDi[o.id].map(pic).filter(Boolean);
+      const main=fotos[0]||null, extras=fotos.slice(1,3);
+      // sottotitolo: (attribuzione) autore/sub · epoca
+      const attr=(f['Attribuzione'] && f['Attribuzione']!=='Autografo') ? f['Attribuzione'] : '';
+      const subv=f[cat.sub] ? [attr, String(f[cat.sub])].filter(Boolean).join(' ') : '';
+      const epK=ELEG_EPOCA.find(k=> k!==cat.sub && f[k]!==undefined && f[k]!==null && f[k]!=='');
+      const sub=[subv, epK ? String(f[epK]) : ''].filter(Boolean).join(' · ');
+      // testo descrittivo: campo preferito della sezione, altrimenti il primo campo lungo compilato
+      const descK=(ELEG_DESCR[cat.key]||[]).filter(k=>String(f[k]||'').trim());
+      let desc=descK.map(k=> cat.key==='numismatica' ? k.replace(/ — descrizione$/,'')+': '+String(f[k]).trim() : String(f[k]).trim()).join('\n');
+      if(!desc){ const alt=campi.find(x=>x.t==='area' && !ELEG_NASCOSTI.has(x.k) && String(f[x.k]||'').trim()); if(alt) desc=String(f[alt.k]).trim(); }
+      // dettagli puntati (le misure vengono riunite in una sola riga)
+      const usati=new Set([cat.sub,'Attribuzione',epK,...descK]);
+      const dimK=['Altezza cm','Larghezza cm','Lunghezza cm','Profondità cm'];
+      const dimParts=[]; if(f['Altezza cm']) dimParts.push('h '+f['Altezza cm']); if(f['Larghezza cm']) dimParts.push('l '+f['Larghezza cm']); if(f['Lunghezza cm']) dimParts.push('lung. '+f['Lunghezza cm']); if(f['Profondità cm']) dimParts.push('p '+f['Profondità cm']);
+      const det=[]; let dimFatto=false;
+      for(const fld of campi){
+        if(fld.t==='area' || ELEG_NASCOSTI.has(fld.k) || usati.has(fld.k)) continue;
+        if(fld.k==='Valore stimato' && !includiStima) continue;
+        if(dimK.includes(fld.k)){ if(dimParts.length && !dimFatto){ dimFatto=true; det.push(['Dimensioni', dimParts.join(' × ')+' cm']); } continue; }
+        const v=f[fld.k]; if(v===undefined||v===null||v===''||(Array.isArray(v)&&!v.length)) continue;
+        det.push([fld.l.replace(/\s*\([^)]*\)/g,'').replace(/\s*—.*$/,''), _valStampa(fld,v)]);
+      }
+      if((f['Collocazione']||[]).length) det.push(['Collocazione', f['Collocazione'].map(collName).filter(Boolean).join(', ')]);
+      const banner = !!main && main.ar>=1.45;
+      const li=det.slice(0, banner?5:9).map(([l,v])=>`<li><b>${esc(l)}</b> – ${esc(v)}</li>`).join('');
+      const cardHtml = li ? `<div class="card"><h3>Dettagli</h3><ul>${li}</ul></div>` : '';
+      const specsHtml = li ? `<div class="specs"><h3>Dettagli</h3><ul>${li}</ul></div>` : '';
+      const descHtml = desc ? `<p class="desc">${esc(desc)}</p>` : '';
+      const tit=String(f['Titolo']||'Senza titolo'), len=tit.length;
+      const cls = len>60?'xs':len>38?'sm':len>24?'md':'';
+      const titHtml=`<h1 class="ttl ${cls}">${esc(tit)}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:''}`;
+      const hdL=`${cat.label} · ${codeStr(cat,f)}`;
+      if(banner){
+        // foto orizzontale a nastro in alto; eventuali foto aggiuntive impilate a destra
+        const exW=extras.length?62:0; const [w,h]=fitBox(main, 269-(exW?exW+5:0), 90);
+        const exH=extras.length===1?90:43;
+        const exHtml=extras.map(p=>{ const [ew,eh]=fitBox(p,exW,exH); return box(p,ew,eh); }).join('');
+        H.push(`<section class="pg item">${hd(hdL,'Pagina '+pn)}${onde('tr')}<div class="body ban">
+          <div class="top">${titHtml}</div>
+          <div class="banrow">${box(main,w,h)}${exHtml?`<div class="excol">${exHtml}</div>`:''}</div>
+          <div class="low">${descHtml||'<div></div>'}${cardHtml}</div></div></section>`);
+      } else {
+        const L=(lato++%2)===0;   // foto a sinistra e a destra alternate
+        let phHtml='';
+        if(main){
+          const [w,h]=fitBox(main,120, extras.length?122:170); phHtml=box(main,w,h);
+          if(extras.length) phHtml+=`<div class="extras">${extras.map(p=>{ const [ew,eh]=fitBox(p,56,40); return box(p,ew,eh); }).join('')}</div>`;
+        } else phHtml='<div class="nofoto">Senza fotografia</div>';
+        H.push(`<section class="pg item">${hd(hdL,'Pagina '+pn)}${onde(L?'tr':'tl')}<div class="body side ${L?'L':'R'}">
+          <div class="ph">${phHtml}</div>
+          <div class="tx">${titHtml}${descHtml}${L?cardHtml:specsHtml}</div></div></section>`);
+      }
+    }
+  }
+
+  // chiusura
+  pn++;
+  const ult=tutteFoto[tutteFoto.length-1]||null;
+  H.push(`<section class="pg fine">${ult?`<img class="bgph" src="${esc(ult.url)}" alt="">`:''}<div class="velo"></div>${hd(COLLEZIONE,'Pagina '+pn)}
+    <div class="fn-tx"><h1 class="big">Catalogo Dajlani Arezzo</h1><div class="fn-sub">${esc(titoloCat)}</div>
+      <div class="row"><span>${esc(COLLEZIONE)} di ${esc(PROPRIETARIO)}</span><i>${ELEG_ICO.user}</i></div>
+      <div class="row"><span>${esc(LUOGO)}</span><i>${ELEG_ICO.pin}</i></div>
+      <div class="row"><span>${esc(plur(totItems,'esemplare','esemplari'))} in ${esc(plur(sezioni.length,'sezione','sezioni'))}</span><i>${ELEG_ICO.grid}</i></div>
+      <div class="row"><span>Stampa del ${esc(oggi)}</span><i>${ELEG_ICO.cal}</i></div>
+    </div></section>`);
+
+  const html=`<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><title>${esc('Catalogo '+titoloCat)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Playfair+Display:wght@400;500&display=swap" rel="stylesheet">
+<style>${ELEG_CSS}</style></head><body><div id="wrap">${H.join('\n')}</div>
+<script>(function(){ var W=297*96/25.4, wrap=document.getElementById('wrap');
+function fit(){ var w=document.documentElement.clientWidth; wrap.style.zoom=Math.min(1,(w-16)/W); }
+fit(); addEventListener('resize',fit); addEventListener('beforeprint',function(){ wrap.style.zoom=1; }); addEventListener('afterprint',fit); })();<\/script></body></html>`;
+  _elegHtml=html;
+  modal(`
+    <h2 style="margin-bottom:6px">Anteprima catalogo — ${esc(titoloCat)} · ${totItems} esemplari · ${pn} pagine</h2>
+    <p class="note" style="margin-bottom:8px">A4 orizzontale, una pagina per pezzo. Premi <b>Stampa / Salva PDF</b>: nel dialogo del browser scegli la stampante oppure «Salva come PDF» (orientamento <b>orizzontale</b>, margini <b>zero</b>, «grafica di sfondo» attiva). Le foto sono collegate al database: stampa entro un'ora dall'apertura.</p>
+    <iframe id="sce-frame" style="width:100%; height:66vh; border:1px solid var(--line); border-radius:8px; background:#cfc7c4"></iframe>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Chiudi</button>
+      <button class="btn secondary" onclick="apriElegScheda()">↗ Apri in una scheda</button>
+      <button class="btn" onclick="stampaElegFrame()">🖨 Stampa / Salva PDF</button>
+    </div>`, true);
+  document.getElementById('sce-frame').srcdoc = html;
+  toast('📄 Catalogo pronto: ' + pn + ' pagine');
+}
+function stampaElegFrame(){
+  const fr=document.getElementById('sce-frame');
+  if(!fr || !fr.contentWindow) return;
+  try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ apriElegScheda(); }
+}
+function apriElegScheda(){
+  if(!_elegHtml) return;
+  const u=URL.createObjectURL(new Blob([_elegHtml],{type:'text/html'}));
+  const w=window.open(u,'_blank'); if(!w) toast('Il browser ha bloccato la nuova scheda: consenti i popup e riprova');
 }
 
 /* ---- Stampa etichette adesive di contrassegno (fogli A4 pre-fustellati) ---- */
