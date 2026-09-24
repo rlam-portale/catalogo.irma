@@ -232,6 +232,7 @@
       <button class="btn secondary small" onclick="resetFiltriMusica()">↺ Azzera filtri</button>
       <button class="btn secondary small" onclick="apriScaffaleVinili()">💿 Sfoglia vinili</button>
       <button class="btn secondary small" onclick="spCollegaTutti()">🎧 Collega a Spotify</button>
+      <button class="btn secondary small" onclick="ricalcolaStimeMusica()" title="Riempie il Valore stimato dei supporti che ne sono privi, dalla quotazione Discogs riportata nella scheda">🧮 Ricalcola stime</button>
     </div>
     <div class="toolbar" id="num-filters" style="display:none">
       <select id="nf-cons" onchange="renderCatalog()"><option value="">Conservazione: tutte</option></select>
@@ -3784,6 +3785,15 @@ function raccogliCampi(cat){
     const st = stimaDaCatalogo(fields['Valore di catalogo']);
     if(st!=null) fields['Valore stimato'] = st;
   }
+  // Supporti musicali: il Valore stimato deriva dalla Quotazione Discogs riportata nella scheda
+  // (prezzo suggerito per la condizione del pezzo, altrimenti prezzo minimo in vendita), SOLO se vuoto.
+  if(cat.key==='musica' && (fields['Valore stimato']==null || fields['Valore stimato']==='')){
+    const st = stimaDaQuotazione(fields['Quotazione'], fields['Stato di conservazione']);
+    if(st!=null){
+      fields['Valore stimato'] = st;
+      if(!fields['Data stima']){ const d = dataDaQuotazione(fields['Quotazione']); if(d) fields['Data stima'] = d; }
+    }
+  }
   return fields;
 }
 async function onAutoreChange(){
@@ -3893,6 +3903,60 @@ function stimaDaCatalogo(testo){
   let imp = importiEuro(testo);
   if(!imp.length) imp = parseImporti(testo);
   return imp.length ? Math.max(...imp) : null;
+}
+/* ---- Supporti musicali: valore economico dalla Quotazione Discogs scritta nella scheda ----
+   La quotazione riporta (righe di testo) il «Prezzo suggerito per condizione» (M, NM, VG+, VG, G+, G, F, P)
+   e il «Prezzo minimo in vendita». La stima è il prezzo suggerito per la condizione del pezzo
+   (scala Goldmine del catalogo → condizione Discogs; VG+ se il grading manca), altrimenti il minimo in vendita.
+   Si accettano solo importi in euro (EUR/€ o senza valuta). */
+const GOLDMINE_DISCOGS = { 'Mint':'M', 'Near Mint':'NM', 'Excellent':'VG+', 'Very Good':'VG', 'Good':'G+', 'Poor':'P' };
+const ORDINE_COND_DISCOGS = ['M','NM','VG+','VG','G+','G','F','P'];
+function _numQuot(s){ s=String(s||'').trim(); if(/,/.test(s) && !/\./.test(s)) s=s.replace(',','.'); else s=s.replace(/,/g,''); const n=parseFloat(s); return isFinite(n)&&n>0 ? Math.round(n*100)/100 : null; }
+function _euroQuot(cur){ cur=String(cur||'').toUpperCase(); return !cur || cur==='EUR' || cur==='€'; }
+function stimaDaQuotazione(testo, grading){
+  testo = String(testo||''); if(!testo.trim()) return null;
+  const rigaS = testo.split('\n').find(r=>/^\s*Prezzo suggerito/i.test(r));
+  if(rigaS){
+    const sugg = {}; const re=/(?:^|[:·])\s*(M|NM|VG\+|VG|G\+|G|F|P)\s+([\d][\d.,]*)\s*(EUR|USD|GBP|CHF|€)?/g; let m;
+    while((m=re.exec(rigaS))){ if(_euroQuot(m[3])){ const n=_numQuot(m[2]); if(n!=null) sugg[m[1]]=n; } }
+    const scelta = GOLDMINE_DISCOGS[grading] || 'VG+';
+    // se manca il prezzo della condizione scelta: prima le condizioni inferiori (stima prudente), poi le superiori
+    const i = ORDINE_COND_DISCOGS.indexOf(scelta);
+    const ordine = [scelta, ...ORDINE_COND_DISCOGS.slice(i+1), ...ORDINE_COND_DISCOGS.slice(0,i).reverse()];
+    for(const c of ordine){ if(sugg[c]!=null) return sugg[c]; }
+  }
+  const mm = testo.match(/Prezzo minimo in vendita:\s*([\d][\d.,]*)\s*(EUR|USD|GBP|CHF|€)?/i);
+  if(mm && _euroQuot(mm[2])) return _numQuot(mm[1]);
+  return null;
+}
+/* Data della quotazione, dalla riga «(Discogs, gg/mm/aaaa)» → aaaa-mm-gg. */
+function dataDaQuotazione(testo){
+  const m = String(testo||'').match(/\(Discogs,\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\)/);
+  return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : null;
+}
+/* Riempie il Valore stimato dei supporti musicali che ne sono PRIVI, dalla Quotazione nella scheda.
+   Non tocca i supporti che hanno già un valore (anche se inserito a mano). */
+async function ricalcolaStimeMusica(){
+  const cat = catByKey('musica');
+  const vuoto = v => v==null || v==='';
+  const senza = (objs.musica||[]).filter(r=> vuoto(r.fields['Valore stimato']));
+  const da = senza.map(r=>({ r, nuovo: stimaDaQuotazione(r.fields['Quotazione'], r.fields['Stato di conservazione']), data: dataDaQuotazione(r.fields['Quotazione']) }))
+    .filter(x=> x.nuovo!=null);
+  if(!da.length){ toast(senza.length ? `Nessuna quotazione con un prezzo nei ${senza.length} supporti senza valore` : 'Nessun supporto senza valore stimato da riempire'); return; }
+  const fuori = senza.length - da.length;
+  if(!confirm(`Riempire il Valore stimato di ${da.length} supporti musicali che ne sono privi, dalla quotazione Discogs riportata nella scheda?\n\n`
+    + (fuori ? `${fuori} supporti restano senza valore perché la scheda non riporta un prezzo.\n` : '')
+    + `I supporti con un valore già inserito non vengono toccati.`)) return;
+  toast(`Aggiorno ${da.length} supporti…`);
+  let ok=0;
+  for(let i=0;i<da.length;i+=4){   // quattro aggiornamenti alla volta
+    await Promise.all(da.slice(i,i+4).map(async ({r,nuovo,data})=>{
+      const upd={'Valore stimato':nuovo}; if(data && vuoto(r.fields['Data stima'])) upd['Data stima']=data;
+      try{ const j = await updateRec(cat.tbl, r.id, upd); patchRec('musica', r.id, j); ok++; }catch(e){}
+    }));
+    if(i+4<da.length) toast(`Aggiorno ${da.length} supporti… ${Math.min(i+4,da.length)}`);
+  }
+  fillFilters(); renderAll(); toast(`✅ Stime aggiornate: ${ok}/${da.length}`);
 }
 
 async function saveObj(catKey, id){
@@ -5333,8 +5397,15 @@ function fmtCrediti(rel){
   Object.keys(perRuolo).forEach(r=> righe.push(r + ': ' + perRuolo[r].join(', ')));
   return righe.join('\n');
 }
-function fmtQuotazione(rel, stats){
+function fmtQuotazione(rel, stats, sugg){
   const l = [];
+  // prezzi suggeriti da Discogs per condizione (chiavi tipo "Very Good Plus (VG+)"), nell'ordine della scala
+  if(sugg && typeof sugg==='object'){
+    const per = {};
+    for(const [k,v] of Object.entries(sugg)){ const m=k.match(/\(([^)\s]+)/); if(m && v && v.value!=null) per[m[1]] = Number(v.value).toFixed(2) + ' ' + (v.currency||''); }
+    const parti = ORDINE_COND_DISCOGS.filter(c=>per[c]).map(c=> c + ' ' + per[c].trim());
+    if(parti.length) l.push('Prezzo suggerito per condizione: ' + parti.join(' · '));
+  }
   if(stats && stats.lowest_price && stats.lowest_price.value!=null)
     l.push('Prezzo minimo in vendita: ' + stats.lowest_price.value + ' ' + (stats.lowest_price.currency||''));
   if(stats && stats.num_for_sale!=null) l.push('Copie in vendita ora: ' + stats.num_for_sale);
@@ -5344,7 +5415,7 @@ function fmtQuotazione(rel, stats){
   if(l.length){ let d=''; try{ d = new Date().toLocaleDateString('it-IT'); }catch(e){} l.push('(Discogs' + (d?', '+d:'') + ')'); }
   return l.join('\n');
 }
-function discogsFullToFields(rel, stats, bc){
+function discogsFullToFields(rel, stats, bc, sugg){
   const artista = (rel.artists||[]).map(a=>stripArtistN(a.name)).filter(Boolean).join(', ');
   const li = (rel.labels||[])[0]||{};
   const gen = [...(rel.genres||[]), ...(rel.styles||[])];
@@ -5365,7 +5436,7 @@ function discogsFullToFields(rel, stats, bc){
     'Codice a barre': (bar&&bar.value)? bar.value.replace(/\s+/g,'') : (bc||''),
     'Tracklist': tracks.join('\n'),
     'Crediti': fmtCrediti(rel),
-    'Quotazione': fmtQuotazione(rel, stats),
+    'Quotazione': fmtQuotazione(rel, stats, sugg),
     '_cover': cover,
     'Note': 'ℹ️ Dati recuperati da Discogs: verifica edizione, anno e stato di conservazione.'
   };
@@ -5378,14 +5449,16 @@ async function discogsEnrich(hit, bc){
   let data = null;
   if(hit && hit.id){
     try{
-      const [rr, sr] = await Promise.all([
+      const [rr, sr, pr] = await Promise.all([
         dgFetch('releases/' + hit.id),
-        dgFetch('marketplace/stats/' + hit.id).catch(()=>null)
+        dgFetch('marketplace/stats/' + hit.id).catch(()=>null),
+        dgFetch('marketplace/price_suggestions/' + hit.id).catch(()=>null)   // richiede il token: se manca, si ignora
       ]);
       if(rr.ok){
         const rel = await rr.json();
         let stats = null; if(sr && sr.ok){ try{ stats = await sr.json(); }catch(e){} }
-        data = discogsFullToFields(rel, stats, bc);
+        let sugg = null; if(pr && pr.ok){ try{ sugg = await pr.json(); }catch(e){} }
+        data = discogsFullToFields(rel, stats, bc, sugg);
       }
     }catch(e){}
   }
